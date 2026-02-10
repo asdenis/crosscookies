@@ -188,10 +188,37 @@ export default function Home() {
               color: 'white',
               border: 'none',
               borderRadius: '3px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              marginRight: '10px'
             }}
           >
             Debug Iframe
+          </button>
+          <button 
+            onClick={async () => {
+              const originalUrl = formUrl.replace('/api/proxy?url=', '');
+              const debugUrl = `/api/debug-html?url=${encodeURIComponent(originalUrl)}`;
+              try {
+                const response = await fetch(debugUrl);
+                const analysis = await response.json();
+                console.log('HTML Analysis:', analysis);
+                alert('Análisis del HTML completado. Revisa la consola para ver los detalles.');
+              } catch (error) {
+                console.error('Error analyzing HTML:', error);
+                alert('Error analizando el HTML. Revisa la consola.');
+              }
+            }}
+            style={{
+              marginTop: '10px',
+              padding: '5px 10px',
+              background: '#28a745',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            Analizar HTML
           </button>
         </div>
       )}

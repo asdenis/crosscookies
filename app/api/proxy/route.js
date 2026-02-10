@@ -206,6 +206,8 @@ async function handleProxy(request) {
       proxyResponse.headers.set('Content-Type', 'text/css; charset=utf-8');
     } else if (urlLower.endsWith('.js')) {
       proxyResponse.headers.set('Content-Type', 'application/javascript; charset=utf-8');
+    } else if (contentType.includes('text/html')) {
+      proxyResponse.headers.set('Content-Type', 'text/html; charset=utf-8');
     } else if (urlLower.endsWith('.woff') || urlLower.endsWith('.woff2')) {
       proxyResponse.headers.set('Content-Type', 'font/woff');
     } else if (urlLower.endsWith('.ttf')) {
