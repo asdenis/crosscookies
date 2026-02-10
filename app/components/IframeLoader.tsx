@@ -10,9 +10,9 @@ interface IframeLoaderProps {
   sandbox?: string;
 }
 
-export default function IframeLoader({ 
-  src, 
-  width = '100%', 
+export default function IframeLoader({
+  src,
+  width = '100%',
   height = '800px',
   sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation'
 }: IframeLoaderProps) {
@@ -30,7 +30,7 @@ export default function IframeLoader({
   useEffect(() => {
     debugLogger.environmentCheck();
     loadIframe();
-    
+
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -42,7 +42,7 @@ export default function IframeLoader({
     setIsLoading(true);
     setError(null);
     setLoadStartTime(Date.now());
-    
+
     debugLogger.iframeStartLoading(src);
     debugLogger.cookieCheck(document.cookie);
 
@@ -59,18 +59,18 @@ export default function IframeLoader({
   const checkNetworkConnectivity = async () => {
     try {
       debugLogger.networkRequest(src, 'HEAD');
-      
+
       // Intentar hacer una petición HEAD para verificar conectividad
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
+
       try {
         const response = await fetch(src, {
           method: 'HEAD',
           mode: 'no-cors', // Para evitar problemas de CORS
           signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
         debugLogger.networkResponse(src, response.status || 0, response.statusText || 'Unknown');
       } catch (fetchError: any) {
@@ -80,13 +80,13 @@ export default function IframeLoader({
           debugLogger.info('Petición enviada (modo no-cors)', { error: fetchError.message });
         }
       }
-      
+
     } catch (networkError: any) {
       debugLogger.error('Error de conectividad de red', {
         error: networkError.message,
         name: networkError.name
       });
-      
+
       if (networkError.name === 'AbortError') {
         debugLogger.warning('Petición de verificación de red cancelada por timeout');
       }
@@ -97,13 +97,13 @@ export default function IframeLoader({
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-    
+
     const loadTime = Date.now() - loadStartTime;
     debugLogger.iframeLoaded(src, loadTime);
-    
+
     setIsLoading(false);
     setError(null);
-    
+
     // Verificar si el iframe se cargó correctamente
     setTimeout(() => {
       checkIframeContent();
@@ -114,7 +114,7 @@ export default function IframeLoader({
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
-    
+
     debugLogger.iframeError(errorMessage, src);
     setIsLoading(false);
     setError(errorMessage);
@@ -130,7 +130,7 @@ export default function IframeLoader({
         const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
         if (iframeDoc) {
           debugLogger.success('Contenido del iframe accesible');
-          
+
           // Verificar si hay contenido
           const bodyContent = iframeDoc.body?.innerHTML;
           if (bodyContent && bodyContent.trim().length > 0) {
@@ -159,7 +159,7 @@ export default function IframeLoader({
   const retry = () => {
     if (retryCount < maxRetries) {
       debugLogger.info(`Reintentando carga del iframe (intento ${retryCount + 1}/${maxRetries})`);
-      
+
       setTimeout(() => {
         setRetryCount(prev => prev + 1);
       }, retryDelay);
@@ -184,7 +184,7 @@ export default function IframeLoader({
             </p>
           </div>
         )}
-        
+
         {error && (
           <div className="error-message">
             <h3>Error al cargar el formulario</h3>
@@ -200,7 +200,7 @@ export default function IframeLoader({
             </div>
           </div>
         )}
-        
+
         <iframe
           ref={iframeRef}
           src={src}

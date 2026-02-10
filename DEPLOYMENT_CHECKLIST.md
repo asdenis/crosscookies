@@ -1,13 +1,18 @@
 # ✅ Checklist de Despliegue en Vercel
 
+## 🔒 ACTUALIZACIÓN DE SEGURIDAD APLICADA
+- [x] **Next.js actualizado a 15.5.12** - Corrige CVE-2025-66478 y otras vulnerabilidades críticas
+- [x] **Vulnerabilidades de seguridad resueltas** - 0 vulnerabilidades detectadas
+- [x] **Build verificado** con la nueva versión
+
 ## Pre-requisitos Completados
 
 ### ✅ Configuración del Proyecto
-- [x] Next.js 15.0.3 instalado y configurado
+- [x] Next.js 15.5.12 instalado y configurado (VERSIÓN SEGURA)
 - [x] TypeScript configurado correctamente
 - [x] Build exitoso sin errores
 - [x] Linting sin errores
-- [x] Todas las dependencias actualizadas
+- [x] Todas las dependencias actualizadas y seguras
 
 ### ✅ Archivos de Configuración
 - [x] `next.config.js` optimizado para producción
