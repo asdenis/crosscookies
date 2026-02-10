@@ -2,7 +2,6 @@
 const nextConfig = {
   output: 'standalone',
   poweredByHeader: false,
-
   async headers() {
     return [
       {
@@ -10,22 +9,20 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "frame-src 'self' https://ticketsplusform.mendoza.gov.ar https://*.mendoza.gov.ar;",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://ticketsplusform.mendoza.gov.ar;",
-              "style-src 'self' 'unsafe-inline' https://ticketsplusform.mendoza.gov.ar;",
-              "img-src 'self' data: blob: https://ticketsplusform.mendoza.gov.ar;",
-              "connect-src 'self' https://ticketsplusform.mendoza.gov.ar https://*.mendoza.gov.ar;",
-              "object-src 'none'",
-              "base-uri 'self'",
-              "frame-ancestors 'self' https://*.mendoza.gov.ar;",  // permite embedding
-            ].join(' '),
+            value: "frame-src 'self' https://ticketsplusform.mendoza.gov.ar https://*.mendoza.gov.ar; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self';",
           },
-          { key: 'Permissions-Policy', value: 'storage-access=(self "https://ticketsplusform.mendoza.gov.ar")' },
-          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'storage-access=*',
+          },
         ],
       },
     ];

@@ -10,7 +10,7 @@ export default function Home() {
   const [storageAccess, setStorageAccess] = useState<'pending' | 'granted' | 'denied' | 'not-needed'>('pending');
   const [userInteracted, setUserInteracted] = useState(false);
   const [browserInfo, setBrowserInfo] = useState<any>({});
-  const [showBigButton, setShowBigButton] = useState(true); // Empezar con botón grande
+  const [showBigButton, setShowBigButton] = useState(false); // No mostrar por defecto
   const [cookieTestResult, setCookieTestResult] = useState<string>('');
   const [retryCount, setRetryCount] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -261,8 +261,8 @@ export default function Home() {
     aggressiveCookieStrategy();
     testCookieAccess();
     
-    // Mostrar siempre el botón grande inicialmente para garantizar user gesture
-    setShowBigButton(true);
+    // No mostrar botón grande inicialmente, dejar que el usuario vea el iframe
+    // Solo mostrar si detectamos problemas específicos
     
   }, []);
 
@@ -424,16 +424,14 @@ export default function Home() {
         )}
       </div>
 
-      {/* Mostrar iframe solo si tenemos acceso */}
-      {storageAccess === 'granted' && (
-        <IframeLoader
-          ref={iframeRef}
-          src={formUrl}
-          width={process.env.NEXT_PUBLIC_IFRAME_WIDTH}
-          height={process.env.NEXT_PUBLIC_IFRAME_HEIGHT}
-          sandbox={process.env.NEXT_PUBLIC_IFRAME_SANDBOX}
-        />
-      )}
+      {/* Mostrar iframe siempre, pero con advertencia si no hay permisos */}
+      <IframeLoader
+        ref={iframeRef}
+        src={formUrl}
+        width={process.env.NEXT_PUBLIC_IFRAME_WIDTH}
+        height={process.env.NEXT_PUBLIC_IFRAME_HEIGHT}
+        sandbox={process.env.NEXT_PUBLIC_IFRAME_SANDBOX}
+      />
 
       {debugLogger.isDebugEnabled() && (
         <div style={{
