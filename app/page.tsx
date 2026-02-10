@@ -7,8 +7,55 @@ import { debugLogger } from './utils/debug';
 
 export default function Home() {
   const [formUrl, setFormUrl] = useState<string>('');
-  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle');
+  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied' | 'session-setup'>('idle');
+  const [sessionEstablished, setSessionEstablished] = useState<boolean>(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  const establishSession = () => {
+    setStorageStatus('session-setup');
+    debugLogger.info('Abriendo ventana para establecer sesión');
+    
+    // Abrir el formulario en una nueva ventana
+    const popup = window.open(formUrl, 'genexus-session', 'width=800,height=600,scrollbars=yes,resizable=yes');
+    
+    if (!popup) {
+      debugLogger.error('No se pudo abrir la ventana popup');
+      setStorageStatus('denied');
+      return;
+    }
+
+    // Monitorear cuando se cierre la ventana
+    const checkClosed = setInterval(() => {
+      if (popup.closed) {
+        clearInterval(checkClosed);
+        debugLogger.info('Ventana cerrada, estableciendo sesión');
+        setSessionEstablished(true);
+        setStorageStatus('granted');
+        
+        // Recargar iframe después de establecer la sesión
+        setTimeout(() => {
+          if (iframeRef.current) {
+            const currentSrc = iframeRef.current.src;
+            iframeRef.current.src = '';
+            setTimeout(() => {
+              if (iframeRef.current) {
+                iframeRef.current.src = currentSrc;
+                debugLogger.info('Iframe recargado con sesión establecida');
+              }
+            }, 300);
+          }
+        }, 500);
+      }
+    }, 1000);
+
+    // Auto-cerrar después de 30 segundos si no se cierra manualmente
+    setTimeout(() => {
+      if (!popup.closed) {
+        popup.close();
+        clearInterval(checkClosed);
+      }
+    }, 30000);
+  };
 
   const requestStorageAccess = async () => {
     setStorageStatus('requesting');
@@ -23,8 +70,8 @@ export default function Home() {
 
     // Verificar si Storage Access API está disponible
     if (typeof document.requestStorageAccess !== 'function') {
-      debugLogger.warning('Storage Access API no disponible en este navegador');
-      setStorageStatus('denied');
+      debugLogger.warning('Storage Access API no disponible, usando método alternativo');
+      establishSession();
       return;
     }
 
@@ -57,8 +104,8 @@ export default function Home() {
       }, 500);
       
     } catch (err: any) {
-      debugLogger.error('Storage Access denegado', err);
-      setStorageStatus('denied');
+      debugLogger.error('Storage Access denegado, usando método alternativo', err);
+      establishSession();
     }
   };
 
@@ -114,10 +161,10 @@ export default function Home() {
           marginBottom: '20px',
           textAlign: 'center'
         }}>
-          <h3>🍪 Permisos de Cookies Requeridos</h3>
+          <h3>🍪 Configuración de Sesión Requerida</h3>
           <p style={{ margin: '15px 0' }}>
             Para que el formulario GeneXus funcione correctamente (botón "Iniciar" y adjuntos),
-            <br/><strong>debes permitir el acceso a cookies cross-site</strong>.
+            <br/><strong>necesitas establecer una sesión válida</strong>.
           </p>
           <button
             onClick={requestStorageAccess}
@@ -132,7 +179,7 @@ export default function Home() {
               fontWeight: 'bold'
             }}
           >
-            PERMITIR COOKIES PARA GENEXUS
+            CONFIGURAR SESIÓN GENEXUS
           </button>
         </div>
       )}
@@ -150,6 +197,22 @@ export default function Home() {
         </div>
       )}
 
+      {storageStatus === 'session-setup' && (
+        <div style={{
+          background: '#d1ecf1',
+          border: '2px solid #bee5eb',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <p>🔄 Estableciendo sesión... Se abrió una ventana nueva</p>
+          <p style={{ fontSize: '14px', marginTop: '10px' }}>
+            Interactúa con el formulario en la ventana nueva y luego ciérrala para continuar
+          </p>
+        </div>
+      )}
+
       {storageStatus === 'granted' && (
         <div style={{
           background: '#d4edda',
@@ -159,7 +222,7 @@ export default function Home() {
           marginBottom: '20px',
           textAlign: 'center'
         }}>
-          <p>✅ Cookies habilitadas - El formulario debería funcionar correctamente</p>
+          <p>✅ {sessionEstablished ? 'Sesión establecida' : 'Cookies habilitadas'} - El formulario debería funcionar correctamente</p>
         </div>
       )}
 
