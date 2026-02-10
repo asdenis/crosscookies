@@ -7,54 +7,16 @@ import { debugLogger } from './utils/debug';
 
 export default function Home() {
   const [formUrl, setFormUrl] = useState<string>('');
-  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied' | 'session-setup'>('idle');
-  const [sessionEstablished, setSessionEstablished] = useState<boolean>(false);
+  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied' | 'redirect'>('idle');
+  const [showIframe, setShowIframe] = useState<boolean>(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const establishSession = () => {
-    setStorageStatus('session-setup');
-    debugLogger.info('Abriendo ventana para establecer sesión');
+  const redirectToForm = () => {
+    setStorageStatus('redirect');
+    debugLogger.info('Redirigiendo al formulario directamente');
     
-    // Abrir el formulario en una nueva ventana
-    const popup = window.open(formUrl, 'genexus-session', 'width=800,height=600,scrollbars=yes,resizable=yes');
-    
-    if (!popup) {
-      debugLogger.error('No se pudo abrir la ventana popup');
-      setStorageStatus('denied');
-      return;
-    }
-
-    // Monitorear cuando se cierre la ventana
-    const checkClosed = setInterval(() => {
-      if (popup.closed) {
-        clearInterval(checkClosed);
-        debugLogger.info('Ventana cerrada, estableciendo sesión');
-        setSessionEstablished(true);
-        setStorageStatus('granted');
-        
-        // Recargar iframe después de establecer la sesión
-        setTimeout(() => {
-          if (iframeRef.current) {
-            const currentSrc = iframeRef.current.src;
-            iframeRef.current.src = '';
-            setTimeout(() => {
-              if (iframeRef.current) {
-                iframeRef.current.src = currentSrc;
-                debugLogger.info('Iframe recargado con sesión establecida');
-              }
-            }, 300);
-          }
-        }, 500);
-      }
-    }, 1000);
-
-    // Auto-cerrar después de 30 segundos si no se cierra manualmente
-    setTimeout(() => {
-      if (!popup.closed) {
-        popup.close();
-        clearInterval(checkClosed);
-      }
-    }, 30000);
+    // Redirigir a la página del formulario
+    window.location.href = formUrl;
   };
 
   const requestStorageAccess = async () => {
@@ -70,8 +32,8 @@ export default function Home() {
 
     // Verificar si Storage Access API está disponible
     if (typeof document.requestStorageAccess !== 'function') {
-      debugLogger.warning('Storage Access API no disponible, usando método alternativo');
-      establishSession();
+      debugLogger.warning('Storage Access API no disponible, redirigiendo directamente');
+      redirectToForm();
       return;
     }
 
@@ -104,8 +66,8 @@ export default function Home() {
       }, 500);
       
     } catch (err: any) {
-      debugLogger.error('Storage Access denegado, usando método alternativo', err);
-      establishSession();
+      debugLogger.error('Storage Access denegado, redirigiendo directamente', err);
+      redirectToForm();
     }
   };
 
@@ -166,21 +128,41 @@ export default function Home() {
             Para que el formulario GeneXus funcione correctamente (botón "Iniciar" y adjuntos),
             <br/><strong>necesitas establecer una sesión válida</strong>.
           </p>
-          <button
-            onClick={requestStorageAccess}
-            style={{
-              padding: '15px 30px',
-              fontSize: '16px',
-              background: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            CONFIGURAR SESIÓN GENEXUS
-          </button>
+          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={requestStorageAccess}
+              style={{
+                padding: '15px 30px',
+                fontSize: '16px',
+                background: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              CONFIGURAR COOKIES
+            </button>
+            <button
+              onClick={redirectToForm}
+              style={{
+                padding: '15px 30px',
+                fontSize: '16px',
+                background: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer',
+                fontWeight: 'bold'
+              }}
+            >
+              IR DIRECTAMENTE AL FORMULARIO
+            </button>
+          </div>
+          <p style={{ fontSize: '14px', marginTop: '15px', color: '#666' }}>
+            Si tienes problemas con el iframe, usa "IR DIRECTAMENTE AL FORMULARIO"
+          </p>
         </div>
       )}
 
@@ -197,22 +179,6 @@ export default function Home() {
         </div>
       )}
 
-      {storageStatus === 'session-setup' && (
-        <div style={{
-          background: '#d1ecf1',
-          border: '2px solid #bee5eb',
-          padding: '15px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <p>🔄 Estableciendo sesión... Se abrió una ventana nueva</p>
-          <p style={{ fontSize: '14px', marginTop: '10px' }}>
-            Interactúa con el formulario en la ventana nueva y luego ciérrala para continuar
-          </p>
-        </div>
-      )}
-
       {storageStatus === 'granted' && (
         <div style={{
           background: '#d4edda',
@@ -222,7 +188,34 @@ export default function Home() {
           marginBottom: '20px',
           textAlign: 'center'
         }}>
-          <p>✅ {sessionEstablished ? 'Sesión establecida' : 'Cookies habilitadas'} - El formulario debería funcionar correctamente</p>
+          <p>✅ Cookies habilitadas - El formulario debería funcionar correctamente</p>
+          <button
+            onClick={redirectToForm}
+            style={{
+              marginTop: '10px',
+              padding: '8px 16px',
+              background: '#28a745',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            Si aún tienes problemas, ir directamente al formulario
+          </button>
+        </div>
+      )}
+
+      {storageStatus === 'redirect' && (
+        <div style={{
+          background: '#d1ecf1',
+          border: '2px solid #bee5eb',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <p>🔄 Redirigiendo al formulario...</p>
         </div>
       )}
 
@@ -236,20 +229,34 @@ export default function Home() {
           textAlign: 'center'
         }}>
           <p>❌ Permisos denegados - El formulario puede no funcionar correctamente</p>
-          <button
-            onClick={requestStorageAccess}
-            style={{
-              marginTop: '10px',
-              padding: '8px 16px',
-              background: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: 'pointer'
-            }}
-          >
-            Reintentar
-          </button>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '10px' }}>
+            <button
+              onClick={requestStorageAccess}
+              style={{
+                padding: '8px 16px',
+                background: '#dc3545',
+                color: 'white',
+                border: 'none',
+                borderRadius: '3px',
+                cursor: 'pointer'
+              }}
+            >
+              Reintentar
+            </button>
+            <button
+              onClick={redirectToForm}
+              style={{
+                padding: '8px 16px',
+                background: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '3px',
+                cursor: 'pointer'
+              }}
+            >
+              Ir directamente al formulario
+            </button>
+          </div>
         </div>
       )}
 
