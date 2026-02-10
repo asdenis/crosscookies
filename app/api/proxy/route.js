@@ -136,7 +136,7 @@ async function handleProxy(request) {
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
       
-      // Reemplazar URLs relativas sin barra inicial (más específico)
+      // Reemplazar URLs relativas sin barra inicial (más específico para recursos estáticos)
       text = text.replace(
         /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:|javascript:|mailto:)([^"']*?\.(css|js|png|jpg|jpeg|gif|woff|woff2|ttf|otf|eot|svg|ico))["']/g,
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$2"'
@@ -162,10 +162,16 @@ async function handleProxy(request) {
           '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$1"'
         );
         
-        // URLs relativas simples en JavaScript
+        // URLs relativas simples en JavaScript (evitar duplicaciones)
         text = text.replace(
           /["'](?!http|\/|#|data:|javascript:|api)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
           '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1"'
+        );
+        
+        // Arreglar URLs duplicadas que ya fueron procesadas
+        text = text.replace(
+          /\/static\/Resources\/static\/Resources\//g,
+          '/static/Resources/'
         );
       }
 
@@ -187,6 +193,17 @@ async function handleProxy(request) {
           'url("/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1")'
         );
       }
+
+      // Arreglar URLs duplicadas que pueden haberse creado
+      text = text.replace(
+        /\/static\/Resources\/static\/Resources\//g,
+        '/static/Resources/'
+      );
+      
+      text = text.replace(
+        /\/ticketsplusform\/static\/ticketsplusform\/static\//g,
+        '/ticketsplusform/static/'
+      );
 
       content = new TextEncoder().encode(text);
       console.log(`${contentType} URLs rewritten successfully`);
@@ -230,16 +247,25 @@ async function handleProxy(request) {
 
     // Copiar headers de respuesta (DESPUÉS de establecer MIME types)
     for (const [key, value] of response.headers.entries()) {
-      if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection', 'content-type'].includes(key.toLowerCase())) {
+      if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(key.toLowerCase())) {
+        // NO copiar content-type del servidor original si ya establecimos uno
+        if (key.toLowerCase() === 'content-type' && proxyResponse.headers.get('Content-Type')) {
+          continue;
+        }
         proxyResponse.headers.set(key, value);
       }
     }
 
     // NO sobrescribir el Content-Type que ya establecimos
-    console.log(`Final Content-Type for ${fullTargetUrl}: ${proxyResponse.headers.get('Content-Type')}`);
+    const finalContentType = proxyResponse.headers.get('Content-Type');
+    console.log(`Final Content-Type for ${fullTargetUrl}: ${finalContentType}`);
     console.log(`Response status: ${response.status}`);
-    console.log(`Response headers:`, Object.fromEntries(response.headers.entries()));
-    console.log(`Final proxy headers:`, Object.fromEntries(proxyResponse.headers.entries()));
+    console.log(`Original Content-Type: ${contentType}`);
+    console.log(`URL ends with .css: ${urlLower.endsWith('.css')}`);
+    console.log(`URL ends with .js: ${urlLower.endsWith('.js')}`);
+    if (urlLower.endsWith('.css') || urlLower.endsWith('.js')) {
+      console.log(`MIME type should be correct for: ${urlLower}`);
+    }
 
     // Agregar headers CORS y de seguridad
     proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
