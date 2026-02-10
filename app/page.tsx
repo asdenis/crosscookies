@@ -90,12 +90,24 @@ export default function Home() {
     const params = process.env.NEXT_PUBLIC_FORM_PARAMS;
 
     if (baseUrl && params) {
-      setFormUrl(`${baseUrl}?${params}`);
-      debugLogger.info('Formulario configurado', { baseUrl });
+      // Intentar usar proxy reverso primero
+      const useProxy = process.env.NEXT_PUBLIC_USE_PROXY === 'true';
+      
+      if (useProxy) {
+        // Usar proxy reverso para evitar problemas cross-site
+        const proxyUrl = `/genexus/com.ticketsplus.responderformularioif?${params}`;
+        setFormUrl(proxyUrl);
+        debugLogger.info('Usando proxy reverso', { proxyUrl });
+        
+        // Con proxy, la sesión debería funcionar automáticamente
+        setSessionReady(true);
+        setStorageStatus('granted');
+      } else {
+        // Usar URL directa (requiere configuración del servidor)
+        setFormUrl(`${baseUrl}?${params}`);
+        debugLogger.info('Usando URL directa', { baseUrl });
+      }
     }
-
-    // NO verificar automáticamente storage access al cargar
-    // Dejar que el usuario haga clic en el botón
   }, []);
 
   if (!formUrl) {

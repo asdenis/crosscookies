@@ -27,6 +27,14 @@ const nextConfig = {
       },
     ];
   },
+  async rewrites() {
+    return [
+      {
+        source: '/genexus/:path*',
+        destination: 'https://ticketsplusform.mendoza.gov.ar/ticketsplusform/:path*',
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;
