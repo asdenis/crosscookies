@@ -129,17 +129,35 @@ async function handleProxy(request) {
       // Reemplazar URLs relativas que NO empiezan con /ticketsplusform/
       text = text.replace(
         /(href|src|action|url)\s*[:=]\s*["']\/(?!api|ticketsplusform)([^"']*?)["']/g,
-        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
+        (match, attr, path) => {
+          // Para CSS, usar la ruta específica
+          if (attr === 'href' && path.endsWith('.css')) {
+            return `${attr}="/api/css/${path}"`;
+          }
+          return `${attr}="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
+        }
       );
       
       // Reemplazar URLs relativas sin barra inicial
       text = text.replace(
         /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:|javascript:)([^"']*?)["']/g,
-        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
+        (match, attr, path) => {
+          // Para CSS, usar la ruta específica
+          if (attr === 'href' && path.endsWith('.css')) {
+            return `${attr}="/api/css/${path}"`;
+          }
+          return `${attr}="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
+        }
       );
 
       // Para JavaScript, también reemplazar URLs en strings sin atributos
       if (contentType.includes('javascript')) {
+        // URLs que empiezan con Resources/ directamente
+        text = text.replace(
+          /["']Resources\/([^"']*?)["']/g,
+          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/Resources/$1"'
+        );
+        
         // URLs que empiezan con /static/ (evitar duplicación)
         text = text.replace(
           /["']\/static\/([^"']*?)["']/g,
@@ -168,8 +186,9 @@ async function handleProxy(request) {
         text = text.replace(
           /["'](?!http|\/|#|data:|javascript:|api)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
           (match, path) => {
-            // Si el path ya contiene static/, no duplicar
-            if (path.startsWith('static/')) {
+            console.log(`Processing relative path: ${path}`);
+            // Si el path ya contiene static/ o Resources/, usar tal como está
+            if (path.startsWith('static/') || path.startsWith('Resources/')) {
               return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
             }
             return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${path}"`;
@@ -208,14 +227,7 @@ async function handleProxy(request) {
       statusText: response.statusText,
     });
 
-    // Copiar headers de respuesta
-    for (const [key, value] of response.headers.entries()) {
-      if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(key.toLowerCase())) {
-        proxyResponse.headers.set(key, value);
-      }
-    }
-
-    // Corregir MIME types para recursos específicos
+    // FORZAR MIME types correctos ANTES de copiar headers
     const urlLower = fullTargetUrl.toLowerCase();
     if (urlLower.endsWith('.css')) {
       proxyResponse.headers.set('Content-Type', 'text/css; charset=utf-8');
@@ -241,17 +253,15 @@ async function handleProxy(request) {
       proxyResponse.headers.set('Content-Type', 'image/x-icon');
     }
 
-    // Forzar MIME type correcto para archivos conocidos
-    const originalContentType = response.headers.get('content-type');
-    if (originalContentType && (originalContentType.includes('text/html') || originalContentType.includes('text/plain'))) {
-      if (urlLower.endsWith('.css')) {
-        proxyResponse.headers.set('Content-Type', 'text/css; charset=utf-8');
-        console.log(`Forced CSS MIME type for: ${fullTargetUrl}`);
-      } else if (urlLower.endsWith('.js')) {
-        proxyResponse.headers.set('Content-Type', 'application/javascript; charset=utf-8');
-        console.log(`Forced JS MIME type for: ${fullTargetUrl}`);
+    // Copiar headers de respuesta (DESPUÉS de establecer MIME types)
+    for (const [key, value] of response.headers.entries()) {
+      if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection', 'content-type'].includes(key.toLowerCase())) {
+        proxyResponse.headers.set(key, value);
       }
     }
+
+    // NO sobrescribir el Content-Type que ya establecimos
+    console.log(`Final Content-Type for ${fullTargetUrl}: ${proxyResponse.headers.get('Content-Type')}`);
 
     // Agregar headers CORS y de seguridad
     proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
