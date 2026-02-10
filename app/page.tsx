@@ -14,27 +14,48 @@ export default function Home() {
     setStorageStatus('requesting');
     debugLogger.info('Solicitando Storage Access API');
 
-    if (!document.requestStorageAccess) {
-      debugLogger.warning('Storage Access API no disponible');
+    // Verificar si estamos en el cliente
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      debugLogger.warning('No estamos en el cliente');
+      setStorageStatus('denied');
+      return;
+    }
+
+    // Verificar si Storage Access API está disponible
+    if (typeof document.requestStorageAccess !== 'function') {
+      debugLogger.warning('Storage Access API no disponible en este navegador');
       setStorageStatus('denied');
       return;
     }
 
     try {
+      // Primero verificar si ya tenemos acceso
+      const hasAccess = await document.hasStorageAccess?.() || false;
+      if (hasAccess) {
+        debugLogger.info('Ya tenemos acceso a storage');
+        setStorageStatus('granted');
+        return;
+      }
+
+      // Solicitar acceso
       await document.requestStorageAccess();
       setStorageStatus('granted');
       debugLogger.success('Storage Access concedido');
       
-      // Recargar iframe
-      if (iframeRef.current) {
-        const currentSrc = iframeRef.current.src;
-        iframeRef.current.src = '';
-        setTimeout(() => {
-          if (iframeRef.current) {
-            iframeRef.current.src = currentSrc;
-          }
-        }, 100);
-      }
+      // Recargar iframe después de un breve delay
+      setTimeout(() => {
+        if (iframeRef.current) {
+          const currentSrc = iframeRef.current.src;
+          iframeRef.current.src = '';
+          setTimeout(() => {
+            if (iframeRef.current) {
+              iframeRef.current.src = currentSrc;
+              debugLogger.info('Iframe recargado con acceso a cookies');
+            }
+          }, 200);
+        }
+      }, 500);
+      
     } catch (err: any) {
       debugLogger.error('Storage Access denegado', err);
       setStorageStatus('denied');
@@ -49,6 +70,23 @@ export default function Home() {
       setFormUrl(`${baseUrl}?${params}`);
       debugLogger.info('Formulario configurado', { baseUrl });
     }
+
+    // Verificar si ya tenemos acceso a storage
+    const checkStorageAccess = async () => {
+      if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.hasStorageAccess) {
+        try {
+          const hasAccess = await document.hasStorageAccess();
+          if (hasAccess) {
+            setStorageStatus('granted');
+            debugLogger.info('Ya tenemos acceso a storage al cargar');
+          }
+        } catch (err) {
+          debugLogger.warning('Error verificando storage access', err);
+        }
+      }
+    };
+
+    checkStorageAccess();
   }, []);
 
   if (!formUrl) {
@@ -174,7 +212,7 @@ export default function Home() {
           <h4>Debug Info</h4>
           <p><strong>Storage Status:</strong> {storageStatus}</p>
           <p><strong>Form URL:</strong> {formUrl.substring(0, 100)}...</p>
-          <p><strong>Storage Access API:</strong> {typeof document.requestStorageAccess === 'function' ? 'Disponible' : 'No disponible'}</p>
+          <p><strong>Storage Access API:</strong> {typeof window !== 'undefined' && typeof document.requestStorageAccess === 'function' ? 'Disponible' : 'No disponible'}</p>
           <p><strong>User Agent:</strong> {navigator.userAgent.substring(0, 100)}...</p>
         </div>
       )}
