@@ -9,7 +9,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-src 'self' https://ticketsplusform.mendoza.gov.ar https://*.mendoza.gov.ar; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self';",
+            value: "frame-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self'; connect-src 'self' https://ticketsplusform.mendoza.gov.ar;",
           },
           {
             key: 'X-Content-Type-Options',
@@ -24,14 +24,6 @@ const nextConfig = {
             value: 'storage-access=*',
           },
         ],
-      },
-    ];
-  },
-  async rewrites() {
-    return [
-      {
-        source: '/genexus/:path*',
-        destination: 'https://ticketsplusform.mendoza.gov.ar/ticketsplusform/:path*',
       },
     ];
   },

@@ -90,23 +90,16 @@ export default function Home() {
     const params = process.env.NEXT_PUBLIC_FORM_PARAMS;
 
     if (baseUrl && params) {
-      // Intentar usar proxy reverso primero
-      const useProxy = process.env.NEXT_PUBLIC_USE_PROXY === 'true';
+      // SIEMPRE usar el proxy API para forzar el funcionamiento del iframe
+      const fullUrl = `${baseUrl}?${params}`;
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(fullUrl)}`;
       
-      if (useProxy) {
-        // Usar proxy reverso para evitar problemas cross-site
-        const proxyUrl = `/genexus/com.ticketsplus.responderformularioif?${params}`;
-        setFormUrl(proxyUrl);
-        debugLogger.info('Usando proxy reverso', { proxyUrl });
-        
-        // Con proxy, la sesión debería funcionar automáticamente
-        setSessionReady(true);
-        setStorageStatus('granted');
-      } else {
-        // Usar URL directa (requiere configuración del servidor)
-        setFormUrl(`${baseUrl}?${params}`);
-        debugLogger.info('Usando URL directa', { baseUrl });
-      }
+      setFormUrl(proxyUrl);
+      debugLogger.info('Usando proxy API forzado', { proxyUrl, originalUrl: fullUrl });
+      
+      // Con el proxy API, establecer la sesión como lista automáticamente
+      setSessionReady(true);
+      setStorageStatus('granted');
     }
   }, []);
 
@@ -130,134 +123,30 @@ export default function Home() {
         <strong>Estado actual:</strong> {storageStatus} | <strong>Sesión lista:</strong> {sessionReady ? 'Sí' : 'No'}
       </div>
 
-      {/* Storage Access Control */}
-      {storageStatus === 'idle' && (
-        <div style={{
-          background: '#fff3cd',
-          border: '2px solid #ffeeba',
-          padding: '20px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <h3>🍪 Configuración de Sesión Requerida</h3>
-          <p style={{ margin: '15px 0' }}>
-            Para que el formulario GeneXus funcione correctamente en el iframe,
-            <br /><strong>necesitas establecer una sesión válida</strong>.
-          </p>
-          <button
-            onClick={requestStorageAccess}
-            style={{
-              padding: '15px 30px',
-              fontSize: '16px',
-              background: '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            CONFIGURAR SESIÓN PARA IFRAME
-          </button>
-        </div>
-      )}
+      {/* Información del proxy */}
+      <div style={{
+        background: '#d4edda',
+        border: '2px solid #c3e6cb',
+        padding: '15px',
+        borderRadius: '8px',
+        marginBottom: '20px',
+        textAlign: 'center'
+      }}>
+        <p>🔄 Usando proxy API para forzar funcionamiento del iframe</p>
+        <p style={{ fontSize: '14px', marginTop: '5px', color: '#666' }}>
+          Todas las peticiones se procesan a través del servidor Next.js
+        </p>
+      </div>
 
-      {storageStatus === 'requesting' && (
-        <div style={{
-          background: '#d1ecf1',
-          border: '2px solid #bee5eb',
-          padding: '15px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <p>🔄 Solicitando permisos de cookies... Acepta en el popup del navegador si aparece</p>
-        </div>
-      )}
-
-      {storageStatus === 'establishing-session' && (
-        <div style={{
-          background: '#d1ecf1',
-          border: '2px solid #bee5eb',
-          padding: '15px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <p>🔄 Estableciendo sesión con el servidor GeneXus...</p>
-        </div>
-      )}
-
-      {storageStatus === 'granted' && sessionReady && (
-        <div style={{
-          background: '#d4edda',
-          border: '2px solid #c3e6cb',
-          padding: '15px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <p>✅ Sesión establecida - El iframe debería funcionar correctamente</p>
-        </div>
-      )}
-
-      {storageStatus === 'denied' && (
-        <div style={{
-          background: '#f8d7da',
-          border: '2px solid #f5c6cb',
-          padding: '15px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <p>❌ No se pudo establecer la sesión - El iframe puede no funcionar correctamente</p>
-          <button
-            onClick={requestStorageAccess}
-            style={{
-              marginTop: '10px',
-              padding: '8px 16px',
-              background: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: 'pointer'
-            }}
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
-
-      {/* Iframe - solo renderizar cuando la sesión esté lista */}
+      {/* Iframe - siempre visible con proxy API */}
       <div style={{ position: 'relative', minHeight: '800px', border: '1px solid #ddd', borderRadius: '8px' }}>
-        {sessionReady ? (
-          <IframeLoader
-            ref={iframeRef}
-            src={formUrl}
-            width="100%"
-            height="800px"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation"
-          />
-        ) : (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '800px',
-            background: '#f8f9fa',
-            color: '#666',
-            fontSize: '18px',
-            textAlign: 'center'
-          }}>
-            <div>
-              <p>🔒 Esperando configuración de sesión</p>
-              <p style={{ fontSize: '14px', marginTop: '10px' }}>
-                Haz clic en "CONFIGURAR SESIÓN PARA IFRAME" para continuar
-              </p>
-            </div>
-          </div>
-        )}
+        <IframeLoader
+          ref={iframeRef}
+          src={formUrl}
+          width="100%"
+          height="800px"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation"
+        />
       </div>
 
       {/* Debug info */}
