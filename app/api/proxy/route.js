@@ -76,6 +76,7 @@ async function handleProxy(request) {
     console.log(`Original URL param: ${targetUrl}`);
     console.log(`Constructed URL: ${fullTargetUrl}`);
     console.log(`Content-Type will be detected from: ${fullTargetUrl.split('?')[0]}`);
+    console.log(`Request headers:`, Object.fromEntries(request.headers.entries()));
 
     // Preparar headers
     const headers = new Headers();
@@ -135,10 +136,16 @@ async function handleProxy(request) {
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
       
-      // Reemplazar URLs relativas sin barra inicial
+      // Reemplazar URLs relativas sin barra inicial (más específico)
       text = text.replace(
-        /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:|javascript:)([^"']*?)["']/g,
+        /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:|javascript:|mailto:)([^"']*?\.(css|js|png|jpg|jpeg|gif|woff|woff2|ttf|otf|eot|svg|ico))["']/g,
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$2"'
+      );
+      
+      // Reemplazar otras URLs relativas sin barra inicial
+      text = text.replace(
+        /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:|javascript:|mailto:)([^"']*?)["']/g,
+        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
 
       // Para JavaScript, también reemplazar URLs en strings sin atributos
@@ -228,6 +235,9 @@ async function handleProxy(request) {
 
     // NO sobrescribir el Content-Type que ya establecimos
     console.log(`Final Content-Type for ${fullTargetUrl}: ${proxyResponse.headers.get('Content-Type')}`);
+    console.log(`Response status: ${response.status}`);
+    console.log(`Response headers:`, Object.fromEntries(response.headers.entries()));
+    console.log(`Final proxy headers:`, Object.fromEntries(proxyResponse.headers.entries()));
 
     // Agregar headers CORS y de seguridad
     proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
@@ -238,6 +248,22 @@ async function handleProxy(request) {
     // Permitir embedding en iframe
     proxyResponse.headers.delete('X-Frame-Options');
     proxyResponse.headers.delete('Content-Security-Policy');
+    proxyResponse.headers.delete('Content-Security-Policy-Report-Only');
+    
+    // Agregar CSP permisivo para el iframe
+    if (contentType.includes('text/html')) {
+      proxyResponse.headers.set('Content-Security-Policy', 
+        "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' *; " +
+        "style-src 'self' 'unsafe-inline' *; " +
+        "img-src 'self' data: blob: *; " +
+        "font-src 'self' data: *; " +
+        "connect-src 'self' *; " +
+        "frame-src 'self' *; " +
+        "object-src 'none'; " +
+        "base-uri 'self';"
+      );
+    }
     
     // Configurar cookies para cross-site
     const setCookie = response.headers.get('set-cookie');
