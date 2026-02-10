@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef } from 'react';
 import { debugLogger } from '../utils/debug';
 
 interface IframeLoaderProps {
@@ -10,18 +10,21 @@ interface IframeLoaderProps {
   sandbox?: string;
 }
 
-export default function IframeLoader({
+const IframeLoader = forwardRef<HTMLIFrameElement, IframeLoaderProps>(({
   src,
   width = '100%',
   height = '800px',
-  sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access"
-}: IframeLoaderProps) {
+  sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation"
+}, externalRef) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [loadStartTime, setLoadStartTime] = useState<number>(0);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const internalRef = useRef<HTMLIFrameElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
+
+  // Usar la ref externa si se proporciona, sino usar la interna
+  const iframeRef = externalRef || internalRef;
 
   const maxRetries = parseInt(process.env.NEXT_PUBLIC_RETRY_ATTEMPTS || '3');
   const loadTimeout = parseInt(process.env.NEXT_PUBLIC_LOAD_TIMEOUT || '30000');
@@ -122,7 +125,7 @@ export default function IframeLoader({
 
   const checkIframeContent = () => {
     try {
-      const iframe = iframeRef.current;
+      const iframe = typeof iframeRef === 'function' ? null : iframeRef?.current;
       if (!iframe) return;
 
       // Intentar acceder al contenido del iframe (puede fallar por CORS)
@@ -218,4 +221,8 @@ export default function IframeLoader({
       </div>
     </div>
   );
-}
+});
+
+IframeLoader.displayName = 'IframeLoader';
+
+export default IframeLoader;

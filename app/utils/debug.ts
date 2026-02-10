@@ -93,6 +93,27 @@ class DebugLogger {
     return this.isEnabled;
   }
 
+  // Métodos específicos para Storage Access API
+  storageAccessRequested() {
+    this.info('Solicitando Storage Access API');
+  }
+
+  storageAccessGranted() {
+    this.success('Storage Access API concedido - cookies disponibles');
+  }
+
+  storageAccessDenied(error?: string) {
+    this.error('Storage Access API denegado', { error });
+  }
+
+  storageAccessNotSupported() {
+    this.warning('Storage Access API no soportado por el navegador');
+  }
+
+  iframeReloaded(reason: string) {
+    this.info('Iframe recargado', { reason });
+  }
+
   // Métodos específicos para el iframe
   iframeStartLoading(url: string) {
     this.info('Iniciando carga del iframe', { url });
