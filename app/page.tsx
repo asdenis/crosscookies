@@ -89,6 +89,8 @@ export default function Home() {
     const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL;
     const params = process.env.NEXT_PUBLIC_FORM_PARAMS;
 
+    console.log('Environment variables:', { baseUrl, params });
+
     if (baseUrl && params) {
       // SIEMPRE usar el proxy API para forzar el funcionamiento del iframe
       const fullUrl = `${baseUrl}?${params}`;
@@ -100,6 +102,8 @@ export default function Home() {
       // Con el proxy API, establecer la sesión como lista automáticamente
       setSessionReady(true);
       setStorageStatus('granted');
+    } else {
+      console.error('Missing environment variables:', { baseUrl, params });
     }
   }, []);
 

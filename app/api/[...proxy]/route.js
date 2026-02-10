@@ -27,44 +27,55 @@ async function handleDynamicProxy(request, { proxy }) {
     // Construir la ruta del proxy
     const proxyPath = Array.isArray(proxy) ? proxy.join('/') : proxy;
     
-    // Construir la URL de destino
-    let targetUrl;
-    if (proxyPath.startsWith('static/') || proxyPath.startsWith('ticketsplusform/')) {
-      targetUrl = `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${proxyPath}`;
-    } else {
-      targetUrl = `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${proxyPath}`;
-    }
-
-    // Agregar query parameters
-    if (url.search) {
-      targetUrl += url.search;
-    }
-
-    console.log(`Dynamic proxy: ${request.method} ${targetUrl}`);
-
-    // Preparar headers
-    const headers = new Headers();
+    console.log(`Dynamic proxy request for: ${proxyPath}`);
     
-    for (const [key, value] of request.headers.entries()) {
-      if (!['host', 'origin', 'referer', 'connection'].includes(key.toLowerCase())) {
-        headers.set(key, value);
+    // Lista de posibles rutas a intentar
+    const possibleUrls = [
+      `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${proxyPath}`,
+      `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${proxyPath}`,
+      `https://ticketsplusform.mendoza.gov.ar/${proxyPath}`,
+    ];
+
+    let response;
+    let targetUrl;
+    
+    // Intentar cada URL hasta encontrar una que funcione
+    for (const tryUrl of possibleUrls) {
+      targetUrl = tryUrl + (url.search || '');
+      console.log(`Trying: ${targetUrl}`);
+      
+      try {
+        const headers = new Headers();
+        
+        for (const [key, value] of request.headers.entries()) {
+          if (!['host', 'origin', 'referer', 'connection'].includes(key.toLowerCase())) {
+            headers.set(key, value);
+          }
+        }
+
+        headers.set('Host', 'ticketsplusform.mendoza.gov.ar');
+        headers.set('Origin', 'https://ticketsplusform.mendoza.gov.ar');
+        headers.set('Referer', 'https://ticketsplusform.mendoza.gov.ar/ticketsplusform/');
+        headers.set('User-Agent', request.headers.get('user-agent') || 'Mozilla/5.0');
+
+        response = await fetch(targetUrl, {
+          method: request.method,
+          headers: headers,
+          body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : undefined,
+        });
+
+        if (response.ok) {
+          console.log(`Success with: ${targetUrl}`);
+          break;
+        }
+      } catch (error) {
+        console.log(`Failed with ${targetUrl}: ${error.message}`);
+        continue;
       }
     }
 
-    headers.set('Host', 'ticketsplusform.mendoza.gov.ar');
-    headers.set('Origin', 'https://ticketsplusform.mendoza.gov.ar');
-    headers.set('Referer', 'https://ticketsplusform.mendoza.gov.ar/ticketsplusform/');
-    headers.set('User-Agent', request.headers.get('user-agent') || 'Mozilla/5.0');
-
-    // Hacer la petición
-    const response = await fetch(targetUrl, {
-      method: request.method,
-      headers: headers,
-      body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : undefined,
-    });
-
-    if (!response.ok) {
-      console.error(`Dynamic proxy error: ${response.status} for ${targetUrl}`);
+    if (!response || !response.ok) {
+      console.error(`All attempts failed for: ${proxyPath}`);
       return new NextResponse(`Resource not found: ${proxyPath}`, { status: 404 });
     }
 
@@ -80,6 +91,26 @@ async function handleDynamicProxy(request, { proxy }) {
       if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(key.toLowerCase())) {
         proxyResponse.headers.set(key, value);
       }
+    }
+
+    // Corregir MIME types
+    const pathLower = proxyPath.toLowerCase();
+    if (pathLower.endsWith('.css')) {
+      proxyResponse.headers.set('Content-Type', 'text/css');
+    } else if (pathLower.endsWith('.js')) {
+      proxyResponse.headers.set('Content-Type', 'application/javascript');
+    } else if (pathLower.endsWith('.woff') || pathLower.endsWith('.woff2')) {
+      proxyResponse.headers.set('Content-Type', 'font/woff');
+    } else if (pathLower.endsWith('.ttf')) {
+      proxyResponse.headers.set('Content-Type', 'font/ttf');
+    } else if (pathLower.endsWith('.png')) {
+      proxyResponse.headers.set('Content-Type', 'image/png');
+    } else if (pathLower.endsWith('.jpg') || pathLower.endsWith('.jpeg')) {
+      proxyResponse.headers.set('Content-Type', 'image/jpeg');
+    } else if (pathLower.endsWith('.gif')) {
+      proxyResponse.headers.set('Content-Type', 'image/gif');
+    } else if (pathLower.endsWith('.svg')) {
+      proxyResponse.headers.set('Content-Type', 'image/svg+xml');
     }
 
     // Headers CORS
