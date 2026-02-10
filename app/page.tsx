@@ -166,9 +166,33 @@ export default function Home() {
           <h4>Debug Info</h4>
           <p><strong>Storage Status:</strong> {storageStatus}</p>
           <p><strong>Session Ready:</strong> {sessionReady ? 'Sí' : 'No'}</p>
-          <p><strong>Form URL:</strong> {formUrl.substring(0, 100)}...</p>
+          <p><strong>Form URL:</strong> {formUrl}</p>
           <p><strong>Storage Access API:</strong> {typeof window !== 'undefined' && typeof document.requestStorageAccess === 'function' ? 'Disponible' : 'No disponible'}</p>
           <p><strong>User Agent:</strong> {navigator.userAgent.substring(0, 100)}...</p>
+          <button 
+            onClick={() => {
+              if (iframeRef.current) {
+                console.log('Iframe src:', iframeRef.current.src);
+                console.log('Iframe contentWindow:', iframeRef.current.contentWindow);
+                try {
+                  console.log('Iframe document:', iframeRef.current.contentDocument);
+                } catch (e) {
+                  console.log('Cannot access iframe document:', e instanceof Error ? e.message : String(e));
+                }
+              }
+            }}
+            style={{
+              marginTop: '10px',
+              padding: '5px 10px',
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            Debug Iframe
+          </button>
         </div>
       )}
     </div>

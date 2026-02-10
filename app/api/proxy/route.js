@@ -73,6 +73,9 @@ async function handleProxy(request) {
     }
 
     console.log(`Proxying: ${request.method} ${fullTargetUrl}`);
+    console.log(`Original URL param: ${targetUrl}`);
+    console.log(`Constructed URL: ${fullTargetUrl}`);
+    console.log(`Content-Type will be detected from: ${fullTargetUrl.split('?')[0]}`);
 
     // Preparar headers
     const headers = new Headers();
@@ -129,45 +132,21 @@ async function handleProxy(request) {
       // Reemplazar URLs relativas que NO empiezan con /ticketsplusform/
       text = text.replace(
         /(href|src|action|url)\s*[:=]\s*["']\/(?!api|ticketsplusform)([^"']*?)["']/g,
-        (match, attr, path) => {
-          // Para CSS, usar la ruta específica
-          if (attr === 'href' && path.endsWith('.css')) {
-            return `${attr}="/api/css/${path}"`;
-          }
-          return `${attr}="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
-        }
+        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
       
       // Reemplazar URLs relativas sin barra inicial
       text = text.replace(
         /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:|javascript:)([^"']*?)["']/g,
-        (match, attr, path) => {
-          // Para CSS, usar la ruta específica
-          if (attr === 'href' && path.endsWith('.css')) {
-            return `${attr}="/api/css/${path}"`;
-          }
-          return `${attr}="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
-        }
+        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$2"'
       );
 
       // Para JavaScript, también reemplazar URLs en strings sin atributos
       if (contentType.includes('javascript')) {
-        // URLs que empiezan con Resources/ directamente
-        text = text.replace(
-          /["']Resources\/([^"']*?)["']/g,
-          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/Resources/$1"'
-        );
-        
-        // URLs que empiezan con /static/ (evitar duplicación)
+        // URLs que empiezan con /static/
         text = text.replace(
           /["']\/static\/([^"']*?)["']/g,
-          (match, path) => {
-            // Evitar duplicar /static/ si ya está presente
-            if (path.startsWith('static/')) {
-              return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
-            }
-            return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${path}"`;
-          }
+          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1"'
         );
         
         // URLs que empiezan con /ticketsplusform/
@@ -176,23 +155,10 @@ async function handleProxy(request) {
           '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$1"'
         );
         
-        // URLs relativas en JavaScript (sin /ticketsplusform/)
-        text = text.replace(
-          /["']\/(?!api|http|ticketsplusform)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
-          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$1"'
-        );
-        
-        // URLs relativas sin barra inicial en JavaScript
+        // URLs relativas simples en JavaScript
         text = text.replace(
           /["'](?!http|\/|#|data:|javascript:|api)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
-          (match, path) => {
-            console.log(`Processing relative path: ${path}`);
-            // Si el path ya contiene static/ o Resources/, usar tal como está
-            if (path.startsWith('static/') || path.startsWith('Resources/')) {
-              return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
-            }
-            return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${path}"`;
-          }
+          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1"'
         );
       }
 
@@ -211,7 +177,7 @@ async function handleProxy(request) {
         // URLs relativas en CSS
         text = text.replace(
           /url\(["']?(?!http|\/|#|data:)([^"')]*?)["']?\)/g,
-          'url("/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$1")'
+          'url("/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1")'
         );
       }
 

@@ -9,7 +9,7 @@ const nextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self'; connect-src 'self' https://ticketsplusform.mendoza.gov.ar;",
+            value: "frame-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; connect-src 'self' https://ticketsplusform.mendoza.gov.ar; img-src 'self' data: https://ticketsplusform.mendoza.gov.ar; font-src 'self' https://ticketsplusform.mendoza.gov.ar;",
           },
           {
             key: 'X-Content-Type-Options',
