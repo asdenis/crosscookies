@@ -34,6 +34,9 @@ async function handleDynamicProxy(request, { proxy }) {
       `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${proxyPath}`,
       `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${proxyPath}`,
       `https://ticketsplusform.mendoza.gov.ar/${proxyPath}`,
+      // Para fuentes, también intentar en Resources
+      `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/Resources/${proxyPath}`,
+      `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/Resources/Spanish/${proxyPath}`,
     ];
 
     let response;

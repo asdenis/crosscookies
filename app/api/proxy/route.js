@@ -140,10 +140,16 @@ async function handleProxy(request) {
 
       // Para JavaScript, también reemplazar URLs en strings sin atributos
       if (contentType.includes('javascript')) {
-        // URLs que empiezan con /static/
+        // URLs que empiezan con /static/ (evitar duplicación)
         text = text.replace(
           /["']\/static\/([^"']*?)["']/g,
-          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1"'
+          (match, path) => {
+            // Evitar duplicar /static/ si ya está presente
+            if (path.startsWith('static/')) {
+              return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
+            }
+            return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${path}"`;
+          }
         );
         
         // URLs que empiezan con /ticketsplusform/
@@ -154,14 +160,20 @@ async function handleProxy(request) {
         
         // URLs relativas en JavaScript (sin /ticketsplusform/)
         text = text.replace(
-          /["']\/(?!api|http)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
+          /["']\/(?!api|http|ticketsplusform)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
           '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$1"'
         );
         
         // URLs relativas sin barra inicial en JavaScript
         text = text.replace(
-          /["'](?!http|\/|#|data:|javascript:)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
-          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$1"'
+          /["'](?!http|\/|#|data:|javascript:|api)([^"']*?\.(css|js|png|jpg|gif|woff|ttf|svg))["']/g,
+          (match, path) => {
+            // Si el path ya contiene static/, no duplicar
+            if (path.startsWith('static/')) {
+              return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${path}"`;
+            }
+            return `"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/${path}"`;
+          }
         );
       }
 
@@ -206,13 +218,17 @@ async function handleProxy(request) {
     // Corregir MIME types para recursos específicos
     const urlLower = fullTargetUrl.toLowerCase();
     if (urlLower.endsWith('.css')) {
-      proxyResponse.headers.set('Content-Type', 'text/css');
+      proxyResponse.headers.set('Content-Type', 'text/css; charset=utf-8');
     } else if (urlLower.endsWith('.js')) {
-      proxyResponse.headers.set('Content-Type', 'application/javascript');
+      proxyResponse.headers.set('Content-Type', 'application/javascript; charset=utf-8');
     } else if (urlLower.endsWith('.woff') || urlLower.endsWith('.woff2')) {
       proxyResponse.headers.set('Content-Type', 'font/woff');
     } else if (urlLower.endsWith('.ttf')) {
       proxyResponse.headers.set('Content-Type', 'font/ttf');
+    } else if (urlLower.endsWith('.otf')) {
+      proxyResponse.headers.set('Content-Type', 'font/otf');
+    } else if (urlLower.endsWith('.eot')) {
+      proxyResponse.headers.set('Content-Type', 'application/vnd.ms-fontobject');
     } else if (urlLower.endsWith('.png')) {
       proxyResponse.headers.set('Content-Type', 'image/png');
     } else if (urlLower.endsWith('.jpg') || urlLower.endsWith('.jpeg')) {
@@ -221,6 +237,20 @@ async function handleProxy(request) {
       proxyResponse.headers.set('Content-Type', 'image/gif');
     } else if (urlLower.endsWith('.svg')) {
       proxyResponse.headers.set('Content-Type', 'image/svg+xml');
+    } else if (urlLower.endsWith('.ico')) {
+      proxyResponse.headers.set('Content-Type', 'image/x-icon');
+    }
+
+    // Forzar MIME type correcto para archivos conocidos
+    const originalContentType = response.headers.get('content-type');
+    if (originalContentType && (originalContentType.includes('text/html') || originalContentType.includes('text/plain'))) {
+      if (urlLower.endsWith('.css')) {
+        proxyResponse.headers.set('Content-Type', 'text/css; charset=utf-8');
+        console.log(`Forced CSS MIME type for: ${fullTargetUrl}`);
+      } else if (urlLower.endsWith('.js')) {
+        proxyResponse.headers.set('Content-Type', 'application/javascript; charset=utf-8');
+        console.log(`Forced JS MIME type for: ${fullTargetUrl}`);
+      }
     }
 
     // Agregar headers CORS y de seguridad
