@@ -16,12 +16,16 @@ export async function DELETE(request) {
   return handleProxy(request);
 }
 
+export async function HEAD(request) {
+  return handleProxy(request);
+}
+
 export async function OPTIONS(request) {
   return new NextResponse(null, {
     status: 200,
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
       'Access-Control-Allow-Credentials': 'true',
     },
@@ -31,11 +35,20 @@ export async function OPTIONS(request) {
 async function handleProxy(request) {
   try {
     const url = new URL(request.url);
-    const targetUrl = url.searchParams.get('url');
+    let targetUrl = url.searchParams.get('url');
     
     if (!targetUrl) {
-      return new NextResponse('Missing URL parameter', { status: 400 });
+      // Si no hay parámetro url, intentar extraer de la URL
+      const pathParts = url.pathname.split('/api/proxy/');
+      if (pathParts.length > 1) {
+        targetUrl = pathParts[1];
+      } else {
+        return new NextResponse('Missing URL parameter', { status: 400 });
+      }
     }
+
+    // Decodificar la URL si está encoded
+    targetUrl = decodeURIComponent(targetUrl);
 
     // Construir la URL completa, evitando duplicaciones
     let fullTargetUrl;
@@ -49,16 +62,24 @@ async function handleProxy(request) {
       fullTargetUrl = `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${targetUrl}`;
     }
 
+    // Agregar query parameters si existen
+    if (url.search && !fullTargetUrl.includes('?')) {
+      // Filtrar el parámetro 'url' de los query params
+      const params = new URLSearchParams(url.search);
+      params.delete('url');
+      if (params.toString()) {
+        fullTargetUrl += `?${params.toString()}`;
+      }
+    }
+
     console.log(`Proxying: ${request.method} ${fullTargetUrl}`);
-    console.log(`Original URL param: ${targetUrl}`);
-    console.log(`Constructed URL: ${fullTargetUrl}`);
 
     // Preparar headers
     const headers = new Headers();
     
     // Copiar headers importantes del request original
     for (const [key, value] of request.headers.entries()) {
-      if (!['host', 'origin', 'referer'].includes(key.toLowerCase())) {
+      if (!['host', 'origin', 'referer', 'connection', 'upgrade-insecure-requests'].includes(key.toLowerCase())) {
         headers.set(key, value);
       }
     }
@@ -66,52 +87,67 @@ async function handleProxy(request) {
     // Establecer headers específicos para GeneXus
     headers.set('Host', 'ticketsplusform.mendoza.gov.ar');
     headers.set('Origin', 'https://ticketsplusform.mendoza.gov.ar');
-    headers.set('Referer', 'https://ticketsplusform.mendoza.gov.ar/');
-    headers.set('User-Agent', request.headers.get('user-agent') || 'Mozilla/5.0');
+    headers.set('Referer', 'https://ticketsplusform.mendoza.gov.ar/ticketsplusform/');
+    headers.set('User-Agent', request.headers.get('user-agent') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
 
     // Hacer la petición al servidor GeneXus
     const response = await fetch(fullTargetUrl, {
       method: request.method,
       headers: headers,
-      body: request.method !== 'GET' ? await request.arrayBuffer() : undefined,
+      body: request.method !== 'GET' && request.method !== 'HEAD' ? await request.arrayBuffer() : undefined,
     });
+
+    if (!response.ok) {
+      console.error(`Proxy error: ${response.status} ${response.statusText} for ${fullTargetUrl}`);
+      return new NextResponse(`Upstream error: ${response.status} ${response.statusText}`, { 
+        status: response.status 
+      });
+    }
 
     // Leer el contenido de la respuesta
     let content = await response.arrayBuffer();
     let contentType = response.headers.get('content-type') || '';
 
-    // Si es HTML, modificar las URLs para que apunten al proxy
-    if (contentType.includes('text/html')) {
-      let html = new TextDecoder().decode(content);
+    // Si es HTML o JavaScript, modificar las URLs para que apunten al proxy
+    if (contentType.includes('text/html') || contentType.includes('application/javascript') || contentType.includes('text/javascript')) {
+      let text = new TextDecoder().decode(content);
       
-      console.log('Rewriting HTML URLs...');
+      console.log(`Rewriting ${contentType} URLs...`);
       
       // Reemplazar URLs absolutas del servidor GeneXus
-      html = html.replace(
+      text = text.replace(
         /https:\/\/ticketsplusform\.mendoza\.gov\.ar\/ticketsplusform\//g,
         '/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/'
       );
       
-      // Reemplazar URLs relativas que empiezan con /ticketsplusform/
-      html = html.replace(
-        /(href|src|action)="\/ticketsplusform\/([^"]*?)"/g,
+      // Reemplazar URLs relativas en HTML/JS
+      text = text.replace(
+        /(href|src|action|url)\s*[:=]\s*["']\/ticketsplusform\/([^"']*?)["']/g,
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
       
       // Reemplazar URLs relativas que NO empiezan con /ticketsplusform/
-      html = html.replace(
-        /(href|src|action)="\/(?!api|ticketsplusform)([^"]*?)"/g,
+      text = text.replace(
+        /(href|src|action|url)\s*[:=]\s*["']\/(?!api|ticketsplusform)([^"']*?)["']/g,
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
       
-      // Reemplazar URLs relativas sin barra inicial (relativas al directorio actual)
-      html = html.replace(
-        /(href|src|action)="(?!http|\/|#)([^"]*?)"/g,
+      // Reemplazar URLs relativas sin barra inicial
+      text = text.replace(
+        /(href|src|action|url)\s*[:=]\s*["'](?!http|\/|#|data:)([^"']*?)["']/g,
         '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
 
-      content = new TextEncoder().encode(html);
-      console.log('HTML URLs rewritten successfully');
+      // Para JavaScript, también reemplazar URLs en strings
+      if (contentType.includes('javascript')) {
+        text = text.replace(
+          /["']\/static\/([^"']*?)["']/g,
+          '"/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/static/$1"'
+        );
+      }
+
+      content = new TextEncoder().encode(text);
+      console.log(`${contentType} URLs rewritten successfully`);
     } else {
       console.log(`Serving ${contentType} content directly`);
     }
@@ -124,7 +160,7 @@ async function handleProxy(request) {
 
     // Copiar headers de respuesta
     for (const [key, value] of response.headers.entries()) {
-      if (!['content-encoding', 'content-length', 'transfer-encoding'].includes(key.toLowerCase())) {
+      if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(key.toLowerCase())) {
         proxyResponse.headers.set(key, value);
       }
     }
@@ -132,7 +168,7 @@ async function handleProxy(request) {
     // Agregar headers CORS y de seguridad
     proxyResponse.headers.set('Access-Control-Allow-Origin', '*');
     proxyResponse.headers.set('Access-Control-Allow-Credentials', 'true');
-    proxyResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    proxyResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
     proxyResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     
     // Permitir embedding en iframe

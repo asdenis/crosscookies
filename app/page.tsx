@@ -145,7 +145,7 @@ export default function Home() {
           src={formUrl}
           width="100%"
           height="800px"
-          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation"
+          sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation allow-downloads allow-modals"
         />
       </div>
 
