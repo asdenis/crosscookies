@@ -14,7 +14,7 @@ export default function IframeLoader({
   src,
   width = '100%',
   height = '800px',
-  sandbox = 'allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation'
+  sandbox = "allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access"
 }: IframeLoaderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
