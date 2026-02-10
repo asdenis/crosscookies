@@ -37,12 +37,21 @@ async function handleProxy(request) {
       return new NextResponse('Missing URL parameter', { status: 400 });
     }
 
-    // Construir la URL completa
-    const fullTargetUrl = targetUrl.startsWith('http') 
-      ? targetUrl 
-      : `https://ticketsplusform.mendoza.gov.ar${targetUrl}`;
+    // Construir la URL completa, evitando duplicaciones
+    let fullTargetUrl;
+    if (targetUrl.startsWith('http')) {
+      fullTargetUrl = targetUrl;
+    } else if (targetUrl.startsWith('/ticketsplusform/')) {
+      fullTargetUrl = `https://ticketsplusform.mendoza.gov.ar${targetUrl}`;
+    } else if (targetUrl.startsWith('/')) {
+      fullTargetUrl = `https://ticketsplusform.mendoza.gov.ar/ticketsplusform${targetUrl}`;
+    } else {
+      fullTargetUrl = `https://ticketsplusform.mendoza.gov.ar/ticketsplusform/${targetUrl}`;
+    }
 
     console.log(`Proxying: ${request.method} ${fullTargetUrl}`);
+    console.log(`Original URL param: ${targetUrl}`);
+    console.log(`Constructed URL: ${fullTargetUrl}`);
 
     // Preparar headers
     const headers = new Headers();
@@ -75,25 +84,36 @@ async function handleProxy(request) {
     if (contentType.includes('text/html')) {
       let html = new TextDecoder().decode(content);
       
+      console.log('Rewriting HTML URLs...');
+      
       // Reemplazar URLs absolutas del servidor GeneXus
       html = html.replace(
-        /https:\/\/ticketsplusform\.mendoza\.gov\.ar/g,
-        '/api/proxy?url=https://ticketsplusform.mendoza.gov.ar'
+        /https:\/\/ticketsplusform\.mendoza\.gov\.ar\/ticketsplusform\//g,
+        '/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/'
       );
       
-      // Reemplazar URLs relativas
+      // Reemplazar URLs relativas que empiezan con /ticketsplusform/
       html = html.replace(
-        /(href|src|action)="\/([^"]*?)"/g,
-        '$1="/api/proxy?url=/ticketsplusform/$2"'
+        /(href|src|action)="\/ticketsplusform\/([^"]*?)"/g,
+        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
       
-      // Reemplazar URLs relativas sin barra inicial
+      // Reemplazar URLs relativas que NO empiezan con /ticketsplusform/
       html = html.replace(
-        /(href|src|action)="(?!http|\/api|#)([^"]*?)"/g,
-        '$1="/api/proxy?url=/ticketsplusform/$2"'
+        /(href|src|action)="\/(?!api|ticketsplusform)([^"]*?)"/g,
+        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
+      );
+      
+      // Reemplazar URLs relativas sin barra inicial (relativas al directorio actual)
+      html = html.replace(
+        /(href|src|action)="(?!http|\/|#)([^"]*?)"/g,
+        '$1="/api/proxy?url=https://ticketsplusform.mendoza.gov.ar/ticketsplusform/$2"'
       );
 
       content = new TextEncoder().encode(html);
+      console.log('HTML URLs rewritten successfully');
+    } else {
+      console.log(`Serving ${contentType} content directly`);
     }
 
     // Crear la respuesta
