@@ -10,7 +10,9 @@ export default function Home() {
   const [storageAccess, setStorageAccess] = useState<'pending' | 'granted' | 'denied' | 'not-needed'>('pending');
   const [userInteracted, setUserInteracted] = useState(false);
   const [browserInfo, setBrowserInfo] = useState<any>({});
-  const [showBigButton, setShowBigButton] = useState(false);
+  const [showBigButton, setShowBigButton] = useState(true); // Empezar con botón grande
+  const [cookieTestResult, setCookieTestResult] = useState<string>('');
+  const [retryCount, setRetryCount] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Detectar navegador y capacidades específicas para GeneXus
@@ -22,142 +24,215 @@ export default function Home() {
     const isFirefox = /Firefox/.test(ua);
     const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
 
-    // Navegadores que aplican CHIPS (state partitioning)
-    const appliesChips = isChrome || isEdge || isBrave;
-    const needsStorageAccess = appliesChips || isSafari;
-    const supportsStorageAccess = !!document.requestStorageAccess;
-
     const info = {
       isChrome,
       isEdge,
       isBrave,
       isFirefox,
       isSafari,
-      appliesChips,
-      needsStorageAccess,
-      supportsStorageAccess,
+      appliesChips: isChrome || isEdge || isBrave,
+      needsStorageAccess: true, // Siempre intentar en cross-site
+      supportsStorageAccess: !!document.requestStorageAccess,
       userAgent: ua,
       cookiesEnabled: navigator.cookieEnabled,
-      // Detectar si estamos en contexto cross-site
-      isCrossSite: (() => {
-        try {
-          const currentDomain = window.location.hostname;
-          const parentDomain = window.top?.location.hostname;
-
-          // Extraer registrable domain (ej: mendoza.gov.ar)
-          const getRegistrableDomain = (hostname: string) => {
-            const parts = hostname.split('.');
-            return parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
-          };
-
-          return getRegistrableDomain(currentDomain) !== getRegistrableDomain(parentDomain || '');
-        } catch {
-          return true; // Si no podemos acceder, asumimos cross-site
-        }
-      })()
+      isCrossSite: true // Asumir siempre cross-site para ser más agresivos
     };
 
     setBrowserInfo(info);
-    debugLogger.info('Información del navegador para GeneXus', info);
-
+    debugLogger.info('Navegador detectado para GeneXus', info);
     return info;
   };
 
-  const requestStorageAccess = async (userGesture = false) => {
-    debugLogger.storageAccessRequested();
+  // Test de cookies más agresivo
+  const testCookieAccess = async () => {
+    debugLogger.info('Ejecutando test de cookies cross-site');
+    
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL?.split('/').slice(0, 3).join('/');
+      if (!baseUrl) return;
 
-    if (!userGesture) {
-      debugLogger.warning('Storage Access sin user gesture - puede fallar en Chrome/Edge');
+      // Múltiples estrategias de test
+      const tests = [
+        // Test 1: Fetch con credentials
+        fetch(`${baseUrl}/favicon.ico`, {
+          method: 'GET',
+          mode: 'no-cors',
+          credentials: 'include',
+          cache: 'no-cache'
+        }),
+        
+        // Test 2: Imagen con credentials
+        new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'use-credentials';
+          img.onload = () => resolve('image-loaded');
+          img.onerror = () => resolve('image-error');
+          img.src = `${baseUrl}/favicon.ico?t=${Date.now()}`;
+        }),
+        
+        // Test 3: Script tag approach
+        new Promise((resolve) => {
+          const script = document.createElement('script');
+          script.src = `${baseUrl}/gx/gx.js?t=${Date.now()}`;
+          script.onload = () => resolve('script-loaded');
+          script.onerror = () => resolve('script-error');
+          document.head.appendChild(script);
+          setTimeout(() => {
+            document.head.removeChild(script);
+            resolve('script-timeout');
+          }, 3000);
+        })
+      ];
+
+      const results = await Promise.allSettled(tests);
+      setCookieTestResult(`Tests: ${results.map(r => r.status).join(', ')}`);
+      debugLogger.info('Resultados test de cookies', results);
+      
+    } catch (error) {
+      debugLogger.error('Error en test de cookies', error);
+      setCookieTestResult('Test failed');
     }
+  };
 
+  // Storage Access más agresivo con múltiples intentos
+  const requestStorageAccess = async (userGesture = false, attempt = 1) => {
+    debugLogger.info(`Intento ${attempt} de Storage Access (user gesture: ${userGesture})`);
+    
     if (!document.requestStorageAccess) {
-      debugLogger.storageAccessNotSupported();
-
-      // Para Firefox, no necesitamos Storage Access API
+      debugLogger.warning('Storage Access API no disponible');
+      
+      // Para Firefox, usar estrategia alternativa
       if (browserInfo.isFirefox) {
-        debugLogger.info('Firefox: usando estrategia alternativa para cookies cross-site');
+        debugLogger.info('Firefox: intentando estrategia de cookies alternativa');
+        await testCookieAccess();
         setStorageAccess('not-needed');
+        setShowBigButton(false);
         return;
       }
-
+      
       setStorageAccess('denied');
       return;
     }
 
     try {
-      // Verificar si ya tenemos acceso
+      // Verificar estado actual
       const hasAccess = await document.hasStorageAccess?.() || false;
+      debugLogger.info(`hasStorageAccess: ${hasAccess}`);
+      
       if (hasAccess) {
-        debugLogger.success('Storage Access ya concedido previamente');
+        debugLogger.success('Storage Access ya disponible');
         setStorageAccess('granted');
         setShowBigButton(false);
         return;
       }
 
-      debugLogger.info('Solicitando Storage Access API para cookies GeneXus...');
+      // Intentar solicitar acceso
+      debugLogger.info('Solicitando Storage Access...');
       await document.requestStorageAccess();
-
-      setStorageAccess('granted');
-      setShowBigButton(false);
-      debugLogger.storageAccessGranted();
-      console.log('✅ Storage Access concedido – cookies GX_SESSION_ID disponibles');
-
-      // Recargar iframe después de un breve delay
-      setTimeout(() => {
-        if (iframeRef.current) {
-          debugLogger.iframeReloaded('Storage Access concedido - cookies GeneXus habilitadas');
-          iframeRef.current.src = iframeRef.current.src;
-        }
-      }, 500);
-
+      
+      // Verificar que realmente se concedió
+      const accessGranted = await document.hasStorageAccess?.() || false;
+      debugLogger.info(`Acceso concedido: ${accessGranted}`);
+      
+      if (accessGranted) {
+        setStorageAccess('granted');
+        setShowBigButton(false);
+        debugLogger.success('✅ Storage Access CONCEDIDO - cookies disponibles');
+        
+        // Test de cookies después del acceso
+        await testCookieAccess();
+        
+        // Recargar iframe con delay más largo
+        setTimeout(() => {
+          if (iframeRef.current) {
+            debugLogger.info('Recargando iframe con cookies habilitadas');
+            const currentSrc = iframeRef.current.src;
+            iframeRef.current.src = '';
+            setTimeout(() => {
+              if (iframeRef.current) {
+                iframeRef.current.src = currentSrc;
+              }
+            }, 100);
+          }
+        }, 1000);
+        
+      } else {
+        throw new Error('Storage Access no se concedió realmente');
+      }
+      
     } catch (err: any) {
-      debugLogger.storageAccessDenied(err.message);
-      console.error('Storage Access denegado:', err);
-
+      debugLogger.error(`Storage Access falló (intento ${attempt})`, err);
+      
+      // Reintentar hasta 3 veces con user gesture
+      if (attempt < 3 && userGesture) {
+        debugLogger.info(`Reintentando Storage Access en 2 segundos...`);
+        setTimeout(() => {
+          setRetryCount(attempt);
+          requestStorageAccess(true, attempt + 1);
+        }, 2000);
+        return;
+      }
+      
       if (err.name === 'NotAllowedError') {
+        debugLogger.error('Usuario denegó Storage Access');
         setStorageAccess('denied');
-        debugLogger.error('Usuario denegó explícitamente Storage Access');
       } else if (err.name === 'InvalidStateError') {
-        debugLogger.warning('Storage Access llamado en contexto inválido - reintentando con botón grande');
+        debugLogger.warning('Contexto inválido - manteniendo botón grande');
         setShowBigButton(true);
       } else {
+        debugLogger.error('Error desconocido en Storage Access');
         setStorageAccess('denied');
       }
     }
   };
 
-  // Estrategia de pre-carga específica para GeneXus
-  const preloadGeneXusStrategy = async () => {
-    if (!browserInfo.needsStorageAccess) return;
-
-    debugLogger.info('Ejecutando pre-carga para GeneXus + Tomcat');
+  // Estrategia de pre-establecimiento de cookies más agresiva
+  const aggressiveCookieStrategy = async () => {
+    debugLogger.info('Ejecutando estrategia agresiva de cookies');
+    
+    const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL?.split('/').slice(0, 3).join('/');
+    if (!baseUrl) return;
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL?.split('/').slice(0, 3).join('/');
-      if (baseUrl) {
-        // Intentar establecer cookies con una petición previa
-        await fetch(`${baseUrl}/favicon.ico`, {
+      // Múltiples peticiones para establecer cookies
+      const requests = [
+        // Petición principal
+        fetch(baseUrl, {
           method: 'GET',
           mode: 'no-cors',
-          credentials: 'include'
-        });
+          credentials: 'include',
+          cache: 'no-cache'
+        }),
+        
+        // Petición a recursos comunes de GeneXus
+        fetch(`${baseUrl}/gx/gx.js`, {
+          method: 'GET',
+          mode: 'no-cors',
+          credentials: 'include',
+          cache: 'no-cache'
+        }),
+        
+        // Petición al servlet principal
+        fetch(`${baseUrl}/servlet/com.ticketsplus.responderformularioif`, {
+          method: 'GET',
+          mode: 'no-cors',
+          credentials: 'include',
+          cache: 'no-cache'
+        })
+      ];
 
-        debugLogger.success('Pre-carga GeneXus ejecutada');
-      }
+      await Promise.allSettled(requests);
+      debugLogger.success('Estrategia agresiva de cookies ejecutada');
+      
     } catch (error) {
-      debugLogger.warning('Pre-carga GeneXus falló', { error });
+      debugLogger.warning('Estrategia agresiva falló parcialmente', error);
     }
   };
 
   const handleUserInteraction = () => {
     if (!userInteracted) {
       setUserInteracted(true);
-      debugLogger.info('Primera interacción del usuario - habilitando Storage Access con user gesture');
-
-      // Si necesitamos Storage Access y no lo tenemos, intentar ahora con user gesture válido
-      if ((storageAccess === 'pending' || storageAccess === 'denied') && browserInfo.needsStorageAccess) {
-        requestStorageAccess(true);
-      }
+      debugLogger.info('Primera interacción del usuario detectada');
     }
   };
 
@@ -167,200 +242,125 @@ export default function Home() {
     const params = process.env.NEXT_PUBLIC_FORM_PARAMS;
 
     if (!baseUrl || !params) {
-      debugLogger.error('Variables de entorno no configuradas para GeneXus');
+      debugLogger.error('Variables de entorno no configuradas');
       return;
     }
 
     const fullUrl = `${baseUrl}?${params}`;
     setFormUrl(fullUrl);
 
-    debugLogger.info('Aplicación GeneXus inicializada', {
+    debugLogger.info('Aplicación inicializada', {
       baseUrl,
-      paramsLength: params.length,
-      fullUrl: fullUrl.substring(0, 100) + '...'
+      paramsLength: params.length
     });
 
-    // Detectar navegador y capacidades
+    // Detectar navegador
     const browser = detectBrowser();
-
-    // Verificar configuración específica para GeneXus
-    checkGeneXusCapabilities();
-
-    // Ejecutar estrategia de pre-carga
-    preloadGeneXusStrategy();
-
-    // Determinar estrategia según navegador
-    if (!browser.isCrossSite) {
-      // Same-site: no necesitamos Storage Access
-      setStorageAccess('not-needed');
-      debugLogger.info('Same-site context - Storage Access no necesario');
-    } else if (browser.isFirefox) {
-      // Firefox: funciona diferente, no necesita Storage Access API
-      setStorageAccess('not-needed');
-      debugLogger.info('Firefox cross-site - usando estrategia nativa');
-    } else if (browser.needsStorageAccess && browser.supportsStorageAccess) {
-      // Chrome/Edge/Brave/Safari: necesitan Storage Access API
-      debugLogger.info('Cross-site context con CHIPS - Storage Access requerido');
-
-      // Intentar automáticamente (puede fallar sin user gesture)
-      setTimeout(() => {
-        if (storageAccess === 'pending') {
-          requestStorageAccess(false);
-        }
-      }, 1000);
-    } else {
-      // Navegador sin soporte
-      setStorageAccess('denied');
-      debugLogger.warning('Navegador sin soporte para Storage Access en contexto cross-site');
-    }
-
+    
+    // Ejecutar estrategias de pre-carga
+    aggressiveCookieStrategy();
+    testCookieAccess();
+    
+    // Mostrar siempre el botón grande inicialmente para garantizar user gesture
+    setShowBigButton(true);
+    
   }, []);
-
-  const checkGeneXusCapabilities = () => {
-    const capabilities = {
-      cookiesEnabled: navigator.cookieEnabled,
-      userAgent: navigator.userAgent,
-      storageAccessAPI: !!document.requestStorageAccess,
-      hasStorageAccessAPI: !!document.hasStorageAccess,
-      isInIframe: window !== window.top,
-      isCrossSite: browserInfo.isCrossSite,
-      // Específico para GeneXus
-      geneXusCompatible: navigator.cookieEnabled && window.fetch,
-      tomcatVersion: 'Detectado: Tomcat 10.1.52 (basado en configuración)',
-      recommendedConfig: 'SAMESITE_COOKIE=Undefined, sin CookieProcessor'
-    };
-
-    debugLogger.info('Capacidades para GeneXus + Tomcat verificadas', capabilities);
-
-    // Advertencias críticas para GeneXus
-    if (!capabilities.cookiesEnabled) {
-      debugLogger.error('CRÍTICO: Cookies deshabilitadas - GeneXus no funcionará (GX_SESSION_ID no disponible)');
-    }
-
-    if (capabilities.isCrossSite && browserInfo.appliesChips && !capabilities.storageAccessAPI) {
-      debugLogger.error('CRÍTICO: Chrome/Edge sin Storage Access API - cookies GX particionadas');
-    }
-  };
 
   if (!formUrl) {
     return (
       <div className="container">
         <DebugPanel />
         <div className="header">
-          <h1>Error de Configuración GeneXus</h1>
-          <p>Variables de entorno no configuradas correctamente.</p>
+          <h1>Error de Configuración</h1>
+          <p>Variables de entorno no configuradas.</p>
         </div>
       </div>
     );
   }
 
-  const getStatusInfo = () => {
-    if (storageAccess === 'not-needed') {
-      return {
-        color: '#48dbfb',
-        icon: 'ℹ️',
-        title: 'Configuración compatible',
-        message: browserInfo.isFirefox
-          ? 'Firefox: Las cookies cross-site funcionan nativamente'
-          : 'Same-site context: No se requieren permisos especiales',
-        problems: []
-      };
-    }
-
-    if (storageAccess === 'pending') {
-      return {
-        color: '#feca57',
-        icon: '🔄',
-        title: 'Permisos de cookies requeridos',
-        message: 'GeneXus necesita cookies cross-site para mantener la sesión',
-        problems: ['Botón "Iniciar" puede dar 401', 'Adjuntos no se marcarán como completados']
-      };
-    }
-
-    if (storageAccess === 'granted') {
-      return {
-        color: '#1dd1a1',
-        icon: '✅',
-        title: 'Cookies GeneXus habilitadas',
-        message: 'GX_SESSION_ID y GX_CLIENT_ID disponibles para peticiones cross-site',
-        problems: []
-      };
-    }
-
-    return {
-      color: '#ff6b6b',
-      icon: '❌',
-      title: 'Cookies bloqueadas',
-      message: 'Las cookies de sesión GeneXus no se enviarán en peticiones cross-site',
-      problems: [
-        'Botón "Iniciar" → Error 401 Unauthorized',
-        'Adjuntos no se marcan como completados (tilde ✓)',
-        'Global Events fallan por pérdida de sesión',
-        'wcresponderformulariointernoarchivo sin cookies GX'
-      ]
-    };
-  };
-
-  const statusInfo = getStatusInfo();
-
-  // Mostrar botón grande si es necesario
-  if (showBigButton || (storageAccess === 'pending' && browserInfo.needsStorageAccess && userInteracted)) {
+  // Siempre mostrar botón grande hasta que tengamos acceso confirmado
+  if (showBigButton && storageAccess !== 'granted') {
     return (
       <div style={{
-        padding: '40px',
+        padding: '20px',
         textAlign: 'center',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         minHeight: '100vh',
         color: 'white'
-      }}>
+      }} onClick={handleUserInteraction}>
         <DebugPanel />
 
         <div style={{
           background: 'rgba(255, 255, 255, 0.95)',
           color: '#333',
-          padding: '40px',
+          padding: '30px',
           borderRadius: '15px',
-          maxWidth: '600px',
-          margin: '0 auto',
+          maxWidth: '700px',
+          margin: '50px auto',
           boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
         }}>
-          <h1 style={{ marginBottom: '20px', color: '#333' }}>🍪 Permisos Requeridos</h1>
+          <h1 style={{ marginBottom: '20px', color: '#d32f2f' }}>🚨 ACCIÓN REQUERIDA</h1>
 
-          <div style={{ marginBottom: '30px', fontSize: '18px', lineHeight: '1.6' }}>
-            <p><strong>Para que el formulario GeneXus funcione correctamente:</strong></p>
-            <ul style={{ textAlign: 'left', marginTop: '15px' }}>
-              <li>✅ Botón "Iniciar" funcionará sin error 401</li>
-              <li>✅ Adjuntos se marcarán como completados (tilde ✓)</li>
-              <li>✅ Sesión GX_SESSION_ID mantenida en peticiones AJAX</li>
-              <li>✅ Global Events funcionarán correctamente</li>
+          <div style={{ marginBottom: '25px', fontSize: '16px', lineHeight: '1.6', textAlign: 'left' }}>
+            <p><strong>PROBLEMA DETECTADO:</strong></p>
+            <ul style={{ marginTop: '10px', color: '#d32f2f' }}>
+              <li>Chrome/Edge: Botón "Iniciar" da error 401</li>
+              <li>Firefox: Adjuntos no marcan tilde ✓</li>
+              <li>Cookies GeneXus bloqueadas en iframe cross-site</li>
+            </ul>
+            
+            <p style={{ marginTop: '15px' }}><strong>SOLUCIÓN:</strong></p>
+            <ul style={{ marginTop: '10px', color: '#2e7d32' }}>
+              <li>✅ Habilitar cookies cross-site para GeneXus</li>
+              <li>✅ Permitir GX_SESSION_ID y GX_CLIENT_ID</li>
+              <li>✅ Funcionalidad completa del formulario</li>
             </ul>
           </div>
 
           <button
-            onClick={() => requestStorageAccess(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleUserInteraction();
+              requestStorageAccess(true, 1);
+            }}
             style={{
               padding: '20px 40px',
-              fontSize: '20px',
-              background: '#667eea',
+              fontSize: '18px',
+              background: '#d32f2f',
               color: 'white',
               border: 'none',
               borderRadius: '10px',
               cursor: 'pointer',
               fontWeight: 'bold',
-              boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
-              transition: 'transform 0.2s'
+              boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+              transition: 'all 0.3s ease',
+              textTransform: 'uppercase'
             }}
-            onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-            onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#b71c1c';
+              e.currentTarget.style.transform = 'scale(1.05)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#d32f2f';
+              e.currentTarget.style.transform = 'scale(1)';
+            }}
           >
-            🚀 HABILITAR COOKIES PARA GENEXUS
+            🍪 HABILITAR COOKIES AHORA
           </button>
 
-          <p style={{ marginTop: '20px', fontSize: '14px', color: '#666' }}>
-            Navegador: {browserInfo.isChrome ? 'Chrome' : browserInfo.isEdge ? 'Edge' : browserInfo.isBrave ? 'Brave' : 'Otro'} |
-            Contexto: Cross-site |
-            CHIPS: {browserInfo.appliesChips ? 'Activo' : 'Inactivo'}
-          </p>
+          {retryCount > 0 && (
+            <p style={{ marginTop: '15px', color: '#ff9800' }}>
+              Intento {retryCount + 1}/3 - Si falla, verifica la configuración del navegador
+            </p>
+          )}
+
+          <div style={{ marginTop: '20px', fontSize: '12px', color: '#666', textAlign: 'left' }}>
+            <p><strong>Información técnica:</strong></p>
+            <p>Navegador: {browserInfo.isChrome ? 'Chrome' : browserInfo.isEdge ? 'Edge' : browserInfo.isBrave ? 'Brave' : browserInfo.isFirefox ? 'Firefox' : 'Otro'}</p>
+            <p>CHIPS: {browserInfo.appliesChips ? 'Activo (bloquea cookies)' : 'Inactivo'}</p>
+            <p>Storage Access API: {browserInfo.supportsStorageAccess ? 'Disponible' : 'No disponible'}</p>
+            <p>Test cookies: {cookieTestResult || 'Pendiente'}</p>
+          </div>
         </div>
       </div>
     );
@@ -372,115 +372,60 @@ export default function Home() {
 
       <div className="header">
         <h1>Formulario Tickets Plus</h1>
-        <p>Gobierno de Mendoza - GeneXus + Tomcat 10.1.52</p>
+        <p>Gobierno de Mendoza - GeneXus + Tomcat</p>
       </div>
 
-      {/* Información del navegador específica para GeneXus */}
-      <div style={{
-        marginBottom: '15px',
-        padding: '12px',
-        background: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: '6px',
-        color: 'white',
-        fontSize: '13px'
-      }}>
-        <strong>Navegador:</strong> {
-          browserInfo.isChrome ? 'Chrome (CHIPS activo)' :
-            browserInfo.isEdge ? 'Edge (CHIPS activo)' :
-              browserInfo.isBrave ? 'Brave (CHIPS activo)' :
-                browserInfo.isFirefox ? 'Firefox (cookies cross-site nativas)' :
-                  browserInfo.isSafari ? 'Safari' : 'Otro'
-        } |
-        <strong> Contexto:</strong> {browserInfo.isCrossSite ? 'Cross-site' : 'Same-site'} |
-        <strong> GeneXus:</strong> {browserInfo.cookiesEnabled ? 'Compatible' : 'Incompatible'}
-      </div>
-
-      {/* Status de Storage Access específico para GeneXus */}
+      {/* Status específico */}
       <div style={{
         marginBottom: '20px',
-        padding: '18px',
-        background: 'rgba(255, 255, 255, 0.1)',
+        padding: '15px',
+        background: storageAccess === 'granted' ? 'rgba(46, 125, 50, 0.2)' : 'rgba(211, 47, 47, 0.2)',
         borderRadius: '8px',
         color: 'white',
-        border: `2px solid ${statusInfo.color}`
+        border: `2px solid ${storageAccess === 'granted' ? '#2e7d32' : '#d32f2f'}`
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontSize: '24px', marginRight: '12px' }}>{statusInfo.icon}</span>
-          <strong style={{ fontSize: '18px' }}>{statusInfo.title}</strong>
-        </div>
-
-        <p style={{ marginBottom: '12px', fontSize: '15px' }}>{statusInfo.message}</p>
-
-        {statusInfo.problems.length > 0 && (
-          <div style={{
-            background: 'rgba(255, 107, 107, 0.1)',
-            padding: '12px',
-            borderRadius: '6px',
-            marginBottom: '12px'
-          }}>
-            <strong style={{ color: '#ff6b6b' }}>Problemas esperados:</strong>
+        {storageAccess === 'granted' ? (
+          <div>
+            <h3 style={{ color: '#4caf50', marginBottom: '10px' }}>✅ Cookies Habilitadas</h3>
+            <p>GeneXus debería funcionar correctamente:</p>
             <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
-              {statusInfo.problems.map((problem, index) => (
-                <li key={index} style={{ color: '#ff6b6b', fontSize: '14px' }}>{problem}</li>
-              ))}
+              <li>Botón "Iniciar" funcionará</li>
+              <li>Adjuntos marcarán tilde ✓</li>
+              <li>Global Events con sesión</li>
             </ul>
           </div>
-        )}
-
-        {storageAccess === 'pending' && browserInfo.needsStorageAccess && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              requestStorageAccess(true);
-            }}
-            style={{
-              padding: '12px 24px',
-              fontSize: '16px',
-              background: '#667eea',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: 'bold'
-            }}
-          >
-            🍪 Habilitar cookies para GeneXus
-          </button>
-        )}
-
-        {storageAccess === 'denied' && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              requestStorageAccess(true);
-            }}
-            style={{
-              padding: '10px 20px',
-              fontSize: '14px',
-              background: '#ff6b6b',
-              color: 'white',
-              border: 'none',
-              borderRadius: '5px',
-              cursor: 'pointer'
-            }}
-          >
-            🔄 Reintentar permisos
-          </button>
-        )}
-
-        {storageAccess === 'granted' && (
-          <div style={{ color: '#1dd1a1', fontSize: '14px' }}>
-            <strong>✅ Funcionalidades GeneXus habilitadas:</strong><br />
-            • Botón "Iniciar" funcionará correctamente<br />
-            • Adjuntos se marcarán con tilde ✓<br />
-            • Sesión GX mantenida en Global Events<br />
-            • wcresponderformulariointernoarchivo con cookies
+        ) : (
+          <div>
+            <h3 style={{ color: '#f44336', marginBottom: '10px' }}>❌ Cookies Bloqueadas</h3>
+            <p>Problemas esperados:</p>
+            <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
+              <li>Botón "Iniciar" → Error 401</li>
+              <li>Adjuntos sin tilde ✓</li>
+              <li>Pérdida de sesión GX</li>
+            </ul>
+            <button
+              onClick={() => {
+                setShowBigButton(true);
+                setStorageAccess('pending');
+              }}
+              style={{
+                marginTop: '10px',
+                padding: '8px 16px',
+                background: '#d32f2f',
+                color: 'white',
+                border: 'none',
+                borderRadius: '5px',
+                cursor: 'pointer'
+              }}
+            >
+              Intentar habilitar cookies
+            </button>
           </div>
         )}
       </div>
 
-      {/* Solo mostrar iframe si tenemos permisos o no los necesitamos */}
-      {(storageAccess === 'granted' || storageAccess === 'not-needed') && (
+      {/* Mostrar iframe solo si tenemos acceso */}
+      {storageAccess === 'granted' && (
         <IframeLoader
           ref={iframeRef}
           src={formUrl}
@@ -499,14 +444,13 @@ export default function Home() {
           color: 'white',
           fontSize: '12px'
         }}>
-          <h3>Debug - GeneXus + Tomcat Configuration</h3>
-          <p><strong>URL:</strong> {formUrl.substring(0, 80)}...</p>
+          <h3>Debug Avanzado</h3>
           <p><strong>Storage Access:</strong> {storageAccess}</p>
-          <p><strong>User Interaction:</strong> {userInteracted ? 'Detectada' : 'Pendiente'}</p>
-          <p><strong>Cross-site:</strong> {browserInfo.isCrossSite ? 'Sí' : 'No'}</p>
-          <p><strong>CHIPS Applied:</strong> {browserInfo.appliesChips ? 'Sí' : 'No'}</p>
-          <p><strong>Recomendación Tomcat:</strong> SAMESITE_COOKIE=Undefined, sin CookieProcessor</p>
-          <p><strong>GeneXus Build:</strong> 186073 compatible</p>
+          <p><strong>User Interaction:</strong> {userInteracted ? 'Sí' : 'No'}</p>
+          <p><strong>Retry Count:</strong> {retryCount}</p>
+          <p><strong>Cookie Test:</strong> {cookieTestResult}</p>
+          <p><strong>Show Big Button:</strong> {showBigButton ? 'Sí' : 'No'}</p>
+          <p><strong>Navegador:</strong> {JSON.stringify(browserInfo, null, 2).substring(0, 200)}...</p>
         </div>
       )}
     </div>

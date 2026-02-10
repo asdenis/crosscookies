@@ -23,6 +23,9 @@ const nextConfig = {
             ].join(' '),
           },
           { key: 'Permissions-Policy', value: 'storage-access=(self "https://ticketsplusform.mendoza.gov.ar")' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'credentialless' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'origin-when-cross-origin' },
         ],
       },
     ];
