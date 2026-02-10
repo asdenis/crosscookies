@@ -17,7 +17,7 @@ export default function Home() {
 
     try {
       // Hacer una petición inicial para establecer cookies
-      const response = await fetch(formUrl, {
+      await fetch(formUrl, {
         method: 'GET',
         credentials: 'include',
         mode: 'no-cors', // Cambiar a no-cors para evitar problemas CORS
@@ -27,7 +27,7 @@ export default function Home() {
 
       // Con no-cors no podemos verificar el status, así que asumimos éxito
       await new Promise(resolve => setTimeout(resolve, 1000));
-      
+
       setSessionReady(true);
       setStorageStatus('granted');
       debugLogger.success('Sesión establecida correctamente');
@@ -68,7 +68,7 @@ export default function Home() {
       setStorageStatus('granted');
       setSessionReady(true);
       debugLogger.success('Storage Access concedido');
-      
+
     } catch (err: any) {
       debugLogger.error('Storage Access denegado, cargando iframe de todas formas', err);
       // Incluso si falla, intentar cargar el iframe
@@ -94,22 +94,8 @@ export default function Home() {
       debugLogger.info('Formulario configurado', { baseUrl });
     }
 
-    // Verificar si ya tenemos acceso a storage
-    const checkStorageAccess = async () => {
-      if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.hasStorageAccess) {
-        try {
-          const hasAccess = await document.hasStorageAccess();
-          if (hasAccess) {
-            setStorageStatus('granted');
-            debugLogger.info('Ya tenemos acceso a storage al cargar');
-          }
-        } catch (err) {
-          debugLogger.warning('Error verificando storage access', err);
-        }
-      }
-    };
-
-    checkStorageAccess();
+    // NO verificar automáticamente storage access al cargar
+    // Dejar que el usuario haga clic en el botón
   }, []);
 
   if (!formUrl) {
@@ -124,8 +110,13 @@ export default function Home() {
   return (
     <div style={{ padding: '20px', fontFamily: 'system-ui' }}>
       <DebugPanel />
-      
+
       <h1>Formulario Tickets Plus - Gobierno de Mendoza</h1>
+
+      {/* Debug del estado actual */}
+      <div style={{ marginBottom: '10px', padding: '10px', background: '#e9ecef', borderRadius: '4px', fontSize: '12px' }}>
+        <strong>Estado actual:</strong> {storageStatus} | <strong>Sesión lista:</strong> {sessionReady ? 'Sí' : 'No'}
+      </div>
 
       {/* Storage Access Control */}
       {storageStatus === 'idle' && (
@@ -140,7 +131,7 @@ export default function Home() {
           <h3>🍪 Configuración de Sesión Requerida</h3>
           <p style={{ margin: '15px 0' }}>
             Para que el formulario GeneXus funcione correctamente en el iframe,
-            <br/><strong>necesitas establecer una sesión válida</strong>.
+            <br /><strong>necesitas establecer una sesión válida</strong>.
           </p>
           <button
             onClick={requestStorageAccess}
