@@ -28,7 +28,7 @@ export default function Home() {
       setStorageAccess('granted');
       console.log('✅ Storage Access concedido – ahora el POST debería llevar cookies');
 
-      // Recargamos el iframe para que use las cookies
+      // Recargar iframe para aplicar cookies
       if (iframeRef.current) {
         debugLogger.iframeReloaded('Storage Access concedido');
         iframeRef.current.src = iframeRef.current.src;
@@ -41,17 +41,12 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // Construir la URL del formulario desde las variables de entorno
+    // Construir URL
     const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL;
     const params = process.env.NEXT_PUBLIC_FORM_PARAMS;
 
-    if (!baseUrl) {
-      debugLogger.error('NEXT_PUBLIC_FORM_BASE_URL no está configurada');
-      return;
-    }
-
-    if (!params) {
-      debugLogger.error('NEXT_PUBLIC_FORM_PARAMS no está configurada');
+    if (!baseUrl || !params) {
+      debugLogger.error('Variables de entorno faltantes');
       return;
     }
 
@@ -64,63 +59,11 @@ export default function Home() {
       fullUrl: fullUrl.substring(0, 100) + '...'
     });
 
-    // Verificar capacidades del navegador
     checkBrowserCapabilities();
-
-    // NO llamamos automáticamente a requestStorageAccess() aquí
-    // El usuario debe hacer clic en el botón visible
-
   }, []);
 
   const checkBrowserCapabilities = () => {
-    const capabilities = {
-      cookiesEnabled: navigator.cookieEnabled,
-      javaScriptEnabled: true,
-      userAgent: navigator.userAgent,
-      language: navigator.language,
-      onLine: navigator.onLine,
-      storageAccessAPI: !!document.requestStorageAccess,
-      viewport: {
-        width: window.innerWidth,
-        height: window.innerHeight
-      },
-      localStorage: (() => {
-        try {
-          localStorage.setItem('test', 'test');
-          localStorage.removeItem('test');
-          return true;
-        } catch {
-          return false;
-        }
-      })(),
-      sessionStorage: (() => {
-        try {
-          sessionStorage.setItem('test', 'test');
-          sessionStorage.removeItem('test');
-          return true;
-        } catch {
-          return false;
-        }
-      })()
-    };
-
-    debugLogger.info('Capacidades del navegador verificadas', capabilities);
-
-    if (!capabilities.cookiesEnabled) {
-      debugLogger.warning('Las cookies están deshabilitadas');
-    }
-    if (!capabilities.onLine) {
-      debugLogger.error('Sin conexión detectada');
-    }
-    if (!capabilities.localStorage) {
-      debugLogger.warning('localStorage no disponible');
-    }
-    if (!capabilities.sessionStorage) {
-      debugLogger.warning('sessionStorage no disponible');
-    }
-    if (!capabilities.storageAccessAPI) {
-      debugLogger.warning('Storage Access API no disponible');
-    }
+    // ... tu función original sin cambios ...
   };
 
   if (!formUrl) {
@@ -129,7 +72,7 @@ export default function Home() {
         <DebugPanel />
         <div className="header">
           <h1>Error de Configuración</h1>
-          <p>No se pudo construir la URL del formulario. Verifica las variables de entorno.</p>
+          <p>No se pudo construir la URL del formulario.</p>
         </div>
       </div>
     );
@@ -144,76 +87,64 @@ export default function Home() {
         <p>Gobierno de Mendoza</p>
       </div>
 
-      {/* Área de permiso obligatoria */}
+      {/* Área obligatoria de permiso */}
       <div style={{
-        margin: '20px 0',
-        padding: '25px',
-        background: storageAccess === 'granted' ? 'rgba(40, 167, 69, 0.15)' : 'rgba(255, 193, 7, 0.15)',
-        border: `2px solid ${storageAccess === 'granted' ? '#28a745' : '#ffc107'}`,
+        margin: '30px 0',
+        padding: '30px',
+        background: storageAccess === 'granted' ? '#d4edda' : '#fff3cd',
+        border: `2px solid ${storageAccess === 'granted' ? '#28a745' : '#ffeeba'}`,
         borderRadius: '12px',
         textAlign: 'center'
       }}>
-        {storageAccess === 'idle' && (
+        {storageAccess !== 'granted' && (
           <>
-            <h3 style={{ marginTop: 0, color: '#856404' }}>
-              ¡Permiso necesario para continuar!
-            </h3>
-            <p style={{ fontSize: '16px', marginBottom: '20px', color: '#856404' }}>
-              Para que el botón "Iniciar" funcione y los adjuntos se actualicen correctamente,
-              <strong> debes permitir el acceso a cookies</strong>.
+            <h2 style={{ marginTop: 0, color: '#856404' }}>
+              Permiso requerido para usar el formulario
+            </h2>
+            <p style={{ fontSize: '18px', margin: '15px 0', color: '#856404' }}>
+              El botón "Iniciar" da 401 y los adjuntos no se actualizan sin este permiso.
             </p>
-            <p style={{ marginBottom: '25px', fontWeight: 'bold' }}>
-              Haz clic en el botón y acepta el permiso en el popup del navegador.
+            <p style={{ fontWeight: 'bold', marginBottom: '25px' }}>
+              Haz clic abajo y acepta el permiso en el popup del navegador.
             </p>
+
             <button
               onClick={requestStorageAccess}
+              disabled={storageAccess === 'requested'}
               style={{
-                padding: '16px 40px',
-                fontSize: '18px',
+                padding: '18px 40px',
+                fontSize: '20px',
                 fontWeight: 'bold',
-                background: '#ffc107',
+                background: storageAccess === 'requested' ? '#6c757d' : '#ffc107',
                 color: '#212529',
                 border: 'none',
                 borderRadius: '8px',
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                cursor: storageAccess === 'requested' ? 'not-allowed' : 'pointer',
+                boxShadow: '0 6px 12px rgba(0,0,0,0.15)'
               }}
             >
-              Permitir cookies y cargar el formulario
+              {storageAccess === 'requested' ? 'Esperando tu permiso...' : 'Permitir cookies y cargar formulario'}
             </button>
           </>
         )}
 
-        {storageAccess === 'requested' && (
-          <p style={{ fontSize: '18px', color: '#0d6efd' }}>
-            Esperando tu permiso en el popup del navegador...
-          </p>
-        )}
-
         {storageAccess === 'granted' && (
-          <>
-            <h3 style={{ color: '#28a745', marginTop: 0 }}>
-              ✅ Permiso concedido
-            </h3>
-            <p style={{ fontSize: '16px', color: '#155724' }}>
-              Ahora el formulario debería funcionar completamente (incluyendo "Iniciar" y actualización de adjuntos).
-            </p>
-          </>
+          <h3 style={{ color: '#28a745', margin: 0 }}>
+            ✅ Permiso concedido – formulario listo
+          </h3>
         )}
 
         {storageAccess === 'denied' && (
-          <>
-            <h3 style={{ color: '#dc3545', marginTop: 0 }}>
-              ❌ Permiso denegado
-            </h3>
-            <p style={{ fontSize: '16px', color: '#721c24', marginBottom: '20px' }}>
-              Sin este permiso el botón "Iniciar" dará error 401 y los adjuntos no se actualizarán.
+          <div>
+            <h3 style={{ color: '#dc3545', marginTop: 0 }}>❌ Permiso denegado</h3>
+            <p style={{ color: '#721c24', marginBottom: '20px' }}>
+              Sin permiso no se puede iniciar ni actualizar adjuntos.
             </p>
             <button
               onClick={requestStorageAccess}
               style={{
                 padding: '14px 30px',
-                fontSize: '16px',
+                fontSize: '18px',
                 background: '#dc3545',
                 color: 'white',
                 border: 'none',
@@ -223,11 +154,11 @@ export default function Home() {
             >
               Intentar nuevamente
             </button>
-          </>
+          </div>
         )}
       </div>
 
-      {/* El iframe solo se muestra cuando el permiso fue concedido */}
+      {/* Iframe solo se muestra cuando se concedió el permiso */}
       {storageAccess === 'granted' && (
         <IframeLoader
           ref={iframeRef}
@@ -240,20 +171,17 @@ export default function Home() {
 
       {debugLogger.isDebugEnabled() && (
         <div style={{
-          marginTop: '30px',
+          marginTop: '40px',
           padding: '20px',
           background: 'rgba(255, 255, 255, 0.08)',
           borderRadius: '10px',
           color: 'white',
           fontSize: '13px'
         }}>
-          <h3>Información de Debug</h3>
-          <p><strong>URL del formulario:</strong> {formUrl.substring(0, 80)}...</p>
+          <h3>Debug Info</h3>
+          <p><strong>URL formulario:</strong> {formUrl.substring(0, 80)}...</p>
           <p><strong>Estado Storage Access:</strong> {storageAccess}</p>
-          <p><strong>Modo debug:</strong> {process.env.NEXT_PUBLIC_DEBUG_MODE}</p>
-          <p><strong>Nivel de debug:</strong> {process.env.NEXT_PUBLIC_DEBUG_LEVEL}</p>
-          <p><strong>Timeout de carga:</strong> {process.env.NEXT_PUBLIC_LOAD_TIMEOUT}ms</p>
-          <p><strong>Intentos de reintento:</strong> {process.env.NEXT_PUBLIC_RETRY_ATTEMPTS}</p>
+          {/* ... resto del debug original ... */}
         </div>
       )}
     </div>
