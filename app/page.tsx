@@ -7,68 +7,101 @@ import { debugLogger } from './utils/debug';
 
 export default function Home() {
   const [formUrl, setFormUrl] = useState<string>('');
-  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied' | 'redirect'>('idle');
-  const [showIframe, setShowIframe] = useState<boolean>(true);
+  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied' | 'establishing-session'>('idle');
+  const [sessionReady, setSessionReady] = useState<boolean>(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const redirectToForm = () => {
-    setStorageStatus('redirect');
-    debugLogger.info('Redirigiendo al formulario directamente');
-    
-    // Redirigir a la página del formulario
-    window.location.href = formUrl;
+  const establishSessionWithFetch = async () => {
+    setStorageStatus('establishing-session');
+    debugLogger.info('Estableciendo sesión con fetch');
+
+    try {
+      // Hacer una petición inicial para establecer cookies
+      const response = await fetch(formUrl, {
+        method: 'GET',
+        credentials: 'include', // Importante: incluir cookies
+        mode: 'cors',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'User-Agent': navigator.userAgent
+        }
+      });
+
+      debugLogger.info('Respuesta inicial recibida', { status: response.status });
+
+      if (response.ok) {
+        // Esperar un poco para que las cookies se establezcan
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        setSessionReady(true);
+        setStorageStatus('granted');
+        debugLogger.success('Sesión establecida correctamente');
+
+        // Cargar el iframe después de establecer la sesión
+        setTimeout(() => {
+          if (iframeRef.current) {
+            iframeRef.current.src = formUrl;
+            debugLogger.info('Iframe cargado con sesión establecida');
+          }
+        }, 500);
+      } else {
+        debugLogger.warning('Respuesta no exitosa, intentando con Storage Access API');
+        await requestStorageAccessFallback();
+      }
+    } catch (error) {
+      debugLogger.error('Error estableciendo sesión con fetch', error);
+      await requestStorageAccessFallback();
+    }
   };
 
-  const requestStorageAccess = async () => {
-    setStorageStatus('requesting');
-    debugLogger.info('Solicitando Storage Access API');
+  const requestStorageAccessFallback = async () => {
+    debugLogger.info('Intentando Storage Access API como fallback');
 
-    // Verificar si estamos en el cliente
     if (typeof window === 'undefined' || typeof document === 'undefined') {
       debugLogger.warning('No estamos en el cliente');
       setStorageStatus('denied');
       return;
     }
 
-    // Verificar si Storage Access API está disponible
     if (typeof document.requestStorageAccess !== 'function') {
-      debugLogger.warning('Storage Access API no disponible, redirigiendo directamente');
-      redirectToForm();
+      debugLogger.warning('Storage Access API no disponible');
+      setStorageStatus('denied');
       return;
     }
 
     try {
-      // Primero verificar si ya tenemos acceso
       const hasAccess = await document.hasStorageAccess?.() || false;
       if (hasAccess) {
         debugLogger.info('Ya tenemos acceso a storage');
         setStorageStatus('granted');
+        setSessionReady(true);
         return;
       }
 
-      // Solicitar acceso
       await document.requestStorageAccess();
       setStorageStatus('granted');
+      setSessionReady(true);
       debugLogger.success('Storage Access concedido');
       
-      // Recargar iframe después de un breve delay
       setTimeout(() => {
         if (iframeRef.current) {
-          const currentSrc = iframeRef.current.src;
-          iframeRef.current.src = '';
-          setTimeout(() => {
-            if (iframeRef.current) {
-              iframeRef.current.src = currentSrc;
-              debugLogger.info('Iframe recargado con acceso a cookies');
-            }
-          }, 200);
+          iframeRef.current.src = formUrl;
+          debugLogger.info('Iframe cargado después de Storage Access');
         }
       }, 500);
       
     } catch (err: any) {
-      debugLogger.error('Storage Access denegado, redirigiendo directamente', err);
-      redirectToForm();
+      debugLogger.error('Storage Access denegado', err);
+      setStorageStatus('denied');
     }
+  };
+
+  const requestStorageAccess = async () => {
+    setStorageStatus('requesting');
+    debugLogger.info('Iniciando proceso de establecimiento de sesión');
+
+    // Primero intentar establecer sesión con fetch
+    await establishSessionWithFetch();
   };
 
   useEffect(() => {
@@ -125,44 +158,24 @@ export default function Home() {
         }}>
           <h3>🍪 Configuración de Sesión Requerida</h3>
           <p style={{ margin: '15px 0' }}>
-            Para que el formulario GeneXus funcione correctamente (botón "Iniciar" y adjuntos),
+            Para que el formulario GeneXus funcione correctamente en el iframe,
             <br/><strong>necesitas establecer una sesión válida</strong>.
           </p>
-          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button
-              onClick={requestStorageAccess}
-              style={{
-                padding: '15px 30px',
-                fontSize: '16px',
-                background: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              CONFIGURAR COOKIES
-            </button>
-            <button
-              onClick={redirectToForm}
-              style={{
-                padding: '15px 30px',
-                fontSize: '16px',
-                background: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontWeight: 'bold'
-              }}
-            >
-              IR DIRECTAMENTE AL FORMULARIO
-            </button>
-          </div>
-          <p style={{ fontSize: '14px', marginTop: '15px', color: '#666' }}>
-            Si tienes problemas con el iframe, usa "IR DIRECTAMENTE AL FORMULARIO"
-          </p>
+          <button
+            onClick={requestStorageAccess}
+            style={{
+              padding: '15px 30px',
+              fontSize: '16px',
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            CONFIGURAR SESIÓN PARA IFRAME
+          </button>
         </div>
       )}
 
@@ -175,38 +188,11 @@ export default function Home() {
           marginBottom: '20px',
           textAlign: 'center'
         }}>
-          <p>🔄 Solicitando permisos... Acepta en el popup del navegador</p>
+          <p>🔄 Solicitando permisos de cookies... Acepta en el popup del navegador si aparece</p>
         </div>
       )}
 
-      {storageStatus === 'granted' && (
-        <div style={{
-          background: '#d4edda',
-          border: '2px solid #c3e6cb',
-          padding: '15px',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <p>✅ Cookies habilitadas - El formulario debería funcionar correctamente</p>
-          <button
-            onClick={redirectToForm}
-            style={{
-              marginTop: '10px',
-              padding: '8px 16px',
-              background: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: 'pointer'
-            }}
-          >
-            Si aún tienes problemas, ir directamente al formulario
-          </button>
-        </div>
-      )}
-
-      {storageStatus === 'redirect' && (
+      {storageStatus === 'establishing-session' && (
         <div style={{
           background: '#d1ecf1',
           border: '2px solid #bee5eb',
@@ -215,7 +201,20 @@ export default function Home() {
           marginBottom: '20px',
           textAlign: 'center'
         }}>
-          <p>🔄 Redirigiendo al formulario...</p>
+          <p>🔄 Estableciendo sesión con el servidor GeneXus...</p>
+        </div>
+      )}
+
+      {storageStatus === 'granted' && sessionReady && (
+        <div style={{
+          background: '#d4edda',
+          border: '2px solid #c3e6cb',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <p>✅ Sesión establecida - El iframe debería funcionar correctamente</p>
         </div>
       )}
 
@@ -228,46 +227,48 @@ export default function Home() {
           marginBottom: '20px',
           textAlign: 'center'
         }}>
-          <p>❌ Permisos denegados - El formulario puede no funcionar correctamente</p>
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '10px' }}>
-            <button
-              onClick={requestStorageAccess}
-              style={{
-                padding: '8px 16px',
-                background: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: '3px',
-                cursor: 'pointer'
-              }}
-            >
-              Reintentar
-            </button>
-            <button
-              onClick={redirectToForm}
-              style={{
-                padding: '8px 16px',
-                background: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '3px',
-                cursor: 'pointer'
-              }}
-            >
-              Ir directamente al formulario
-            </button>
-          </div>
+          <p>❌ No se pudo establecer la sesión - El iframe puede no funcionar correctamente</p>
+          <button
+            onClick={requestStorageAccess}
+            style={{
+              marginTop: '10px',
+              padding: '8px 16px',
+              background: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            Reintentar
+          </button>
         </div>
       )}
 
-      {/* Iframe - siempre visible */}
+      {/* Iframe - solo cargar cuando la sesión esté lista */}
       <IframeLoader
         ref={iframeRef}
-        src={formUrl}
+        src={sessionReady ? formUrl : 'about:blank'}
         width="100%"
         height="800px"
         sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation"
       />
+
+      {!sessionReady && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          background: 'rgba(255, 255, 255, 0.9)',
+          padding: '20px',
+          borderRadius: '8px',
+          textAlign: 'center',
+          zIndex: 10
+        }}>
+          <p>El iframe se cargará una vez establecida la sesión</p>
+        </div>
+      )}
 
       {/* Debug info */}
       {debugLogger.isDebugEnabled() && (
@@ -281,6 +282,7 @@ export default function Home() {
         }}>
           <h4>Debug Info</h4>
           <p><strong>Storage Status:</strong> {storageStatus}</p>
+          <p><strong>Session Ready:</strong> {sessionReady ? 'Sí' : 'No'}</p>
           <p><strong>Form URL:</strong> {formUrl.substring(0, 100)}...</p>
           <p><strong>Storage Access API:</strong> {typeof window !== 'undefined' && typeof document.requestStorageAccess === 'function' ? 'Disponible' : 'No disponible'}</p>
           <p><strong>User Agent:</strong> {navigator.userAgent.substring(0, 100)}...</p>
