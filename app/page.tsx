@@ -7,448 +7,175 @@ import { debugLogger } from './utils/debug';
 
 export default function Home() {
   const [formUrl, setFormUrl] = useState<string>('');
-  const [storageAccess, setStorageAccess] = useState<'pending' | 'granted' | 'denied' | 'not-needed'>('pending');
-  const [userInteracted, setUserInteracted] = useState(false);
-  const [browserInfo, setBrowserInfo] = useState<any>({});
-  const [showBigButton, setShowBigButton] = useState(false); // No mostrar por defecto
-  const [cookieTestResult, setCookieTestResult] = useState<string>('');
-  const [retryCount, setRetryCount] = useState(0);
+  const [storageStatus, setStorageStatus] = useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle');
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Detectar navegador y capacidades específicas para GeneXus
-  const detectBrowser = () => {
-    const ua = navigator.userAgent;
-    const isChrome = /Chrome/.test(ua) && !/Edg/.test(ua);
-    const isEdge = /Edg/.test(ua);
-    const isBrave = (navigator as any).brave !== undefined;
-    const isFirefox = /Firefox/.test(ua);
-    const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+  const requestStorageAccess = async () => {
+    setStorageStatus('requesting');
+    debugLogger.info('Solicitando Storage Access API');
 
-    const info = {
-      isChrome,
-      isEdge,
-      isBrave,
-      isFirefox,
-      isSafari,
-      appliesChips: isChrome || isEdge || isBrave,
-      needsStorageAccess: true, // Siempre intentar en cross-site
-      supportsStorageAccess: !!document.requestStorageAccess,
-      userAgent: ua,
-      cookiesEnabled: navigator.cookieEnabled,
-      isCrossSite: true // Asumir siempre cross-site para ser más agresivos
-    };
-
-    setBrowserInfo(info);
-    debugLogger.info('Navegador detectado para GeneXus', info);
-    return info;
-  };
-
-  // Test de cookies más agresivo
-  const testCookieAccess = async () => {
-    debugLogger.info('Ejecutando test de cookies cross-site');
-    
-    try {
-      const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL?.split('/').slice(0, 3).join('/');
-      if (!baseUrl) return;
-
-      // Múltiples estrategias de test
-      const tests = [
-        // Test 1: Fetch con credentials
-        fetch(`${baseUrl}/favicon.ico`, {
-          method: 'GET',
-          mode: 'no-cors',
-          credentials: 'include',
-          cache: 'no-cache'
-        }),
-        
-        // Test 2: Imagen con credentials
-        new Promise((resolve) => {
-          const img = new Image();
-          img.crossOrigin = 'use-credentials';
-          img.onload = () => resolve('image-loaded');
-          img.onerror = () => resolve('image-error');
-          img.src = `${baseUrl}/favicon.ico?t=${Date.now()}`;
-        }),
-        
-        // Test 3: Script tag approach
-        new Promise((resolve) => {
-          const script = document.createElement('script');
-          script.src = `${baseUrl}/gx/gx.js?t=${Date.now()}`;
-          script.onload = () => resolve('script-loaded');
-          script.onerror = () => resolve('script-error');
-          document.head.appendChild(script);
-          setTimeout(() => {
-            document.head.removeChild(script);
-            resolve('script-timeout');
-          }, 3000);
-        })
-      ];
-
-      const results = await Promise.allSettled(tests);
-      setCookieTestResult(`Tests: ${results.map(r => r.status).join(', ')}`);
-      debugLogger.info('Resultados test de cookies', results);
-      
-    } catch (error) {
-      debugLogger.error('Error en test de cookies', error);
-      setCookieTestResult('Test failed');
-    }
-  };
-
-  // Storage Access más agresivo con múltiples intentos
-  const requestStorageAccess = async (userGesture = false, attempt = 1) => {
-    debugLogger.info(`Intento ${attempt} de Storage Access (user gesture: ${userGesture})`);
-    
     if (!document.requestStorageAccess) {
       debugLogger.warning('Storage Access API no disponible');
-      
-      // Para Firefox, usar estrategia alternativa
-      if (browserInfo.isFirefox) {
-        debugLogger.info('Firefox: intentando estrategia de cookies alternativa');
-        await testCookieAccess();
-        setStorageAccess('not-needed');
-        setShowBigButton(false);
-        return;
-      }
-      
-      setStorageAccess('denied');
+      setStorageStatus('denied');
       return;
     }
 
     try {
-      // Verificar estado actual
-      const hasAccess = await document.hasStorageAccess?.() || false;
-      debugLogger.info(`hasStorageAccess: ${hasAccess}`);
-      
-      if (hasAccess) {
-        debugLogger.success('Storage Access ya disponible');
-        setStorageAccess('granted');
-        setShowBigButton(false);
-        return;
-      }
-
-      // Intentar solicitar acceso
-      debugLogger.info('Solicitando Storage Access...');
       await document.requestStorageAccess();
+      setStorageStatus('granted');
+      debugLogger.success('Storage Access concedido');
       
-      // Verificar que realmente se concedió
-      const accessGranted = await document.hasStorageAccess?.() || false;
-      debugLogger.info(`Acceso concedido: ${accessGranted}`);
-      
-      if (accessGranted) {
-        setStorageAccess('granted');
-        setShowBigButton(false);
-        debugLogger.success('✅ Storage Access CONCEDIDO - cookies disponibles');
-        
-        // Test de cookies después del acceso
-        await testCookieAccess();
-        
-        // Recargar iframe con delay más largo
+      // Recargar iframe
+      if (iframeRef.current) {
+        const currentSrc = iframeRef.current.src;
+        iframeRef.current.src = '';
         setTimeout(() => {
           if (iframeRef.current) {
-            debugLogger.info('Recargando iframe con cookies habilitadas');
-            const currentSrc = iframeRef.current.src;
-            iframeRef.current.src = '';
-            setTimeout(() => {
-              if (iframeRef.current) {
-                iframeRef.current.src = currentSrc;
-              }
-            }, 100);
+            iframeRef.current.src = currentSrc;
           }
-        }, 1000);
-        
-      } else {
-        throw new Error('Storage Access no se concedió realmente');
+        }, 100);
       }
-      
     } catch (err: any) {
-      debugLogger.error(`Storage Access falló (intento ${attempt})`, err);
-      
-      // Reintentar hasta 3 veces con user gesture
-      if (attempt < 3 && userGesture) {
-        debugLogger.info(`Reintentando Storage Access en 2 segundos...`);
-        setTimeout(() => {
-          setRetryCount(attempt);
-          requestStorageAccess(true, attempt + 1);
-        }, 2000);
-        return;
-      }
-      
-      if (err.name === 'NotAllowedError') {
-        debugLogger.error('Usuario denegó Storage Access');
-        setStorageAccess('denied');
-      } else if (err.name === 'InvalidStateError') {
-        debugLogger.warning('Contexto inválido - manteniendo botón grande');
-        setShowBigButton(true);
-      } else {
-        debugLogger.error('Error desconocido en Storage Access');
-        setStorageAccess('denied');
-      }
-    }
-  };
-
-  // Estrategia de pre-establecimiento de cookies más agresiva
-  const aggressiveCookieStrategy = async () => {
-    debugLogger.info('Ejecutando estrategia agresiva de cookies');
-    
-    const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL?.split('/').slice(0, 3).join('/');
-    if (!baseUrl) return;
-
-    try {
-      // Múltiples peticiones para establecer cookies
-      const requests = [
-        // Petición principal
-        fetch(baseUrl, {
-          method: 'GET',
-          mode: 'no-cors',
-          credentials: 'include',
-          cache: 'no-cache'
-        }),
-        
-        // Petición a recursos comunes de GeneXus
-        fetch(`${baseUrl}/gx/gx.js`, {
-          method: 'GET',
-          mode: 'no-cors',
-          credentials: 'include',
-          cache: 'no-cache'
-        }),
-        
-        // Petición al servlet principal
-        fetch(`${baseUrl}/servlet/com.ticketsplus.responderformularioif`, {
-          method: 'GET',
-          mode: 'no-cors',
-          credentials: 'include',
-          cache: 'no-cache'
-        })
-      ];
-
-      await Promise.allSettled(requests);
-      debugLogger.success('Estrategia agresiva de cookies ejecutada');
-      
-    } catch (error) {
-      debugLogger.warning('Estrategia agresiva falló parcialmente', error);
-    }
-  };
-
-  const handleUserInteraction = () => {
-    if (!userInteracted) {
-      setUserInteracted(true);
-      debugLogger.info('Primera interacción del usuario detectada');
+      debugLogger.error('Storage Access denegado', err);
+      setStorageStatus('denied');
     }
   };
 
   useEffect(() => {
-    // Construir URL del formulario
     const baseUrl = process.env.NEXT_PUBLIC_FORM_BASE_URL;
     const params = process.env.NEXT_PUBLIC_FORM_PARAMS;
 
-    if (!baseUrl || !params) {
-      debugLogger.error('Variables de entorno no configuradas');
-      return;
+    if (baseUrl && params) {
+      setFormUrl(`${baseUrl}?${params}`);
+      debugLogger.info('Formulario configurado', { baseUrl });
     }
-
-    const fullUrl = `${baseUrl}?${params}`;
-    setFormUrl(fullUrl);
-
-    debugLogger.info('Aplicación inicializada', {
-      baseUrl,
-      paramsLength: params.length
-    });
-
-    // Detectar navegador
-    const browser = detectBrowser();
-    
-    // Ejecutar estrategias de pre-carga
-    aggressiveCookieStrategy();
-    testCookieAccess();
-    
-    // No mostrar botón grande inicialmente, dejar que el usuario vea el iframe
-    // Solo mostrar si detectamos problemas específicos
-    
   }, []);
 
   if (!formUrl) {
     return (
-      <div className="container">
-        <DebugPanel />
-        <div className="header">
-          <h1>Error de Configuración</h1>
-          <p>Variables de entorno no configuradas.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Siempre mostrar botón grande hasta que tengamos acceso confirmado
-  if (showBigButton && storageAccess !== 'granted') {
-    return (
-      <div style={{
-        padding: '20px',
-        textAlign: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        minHeight: '100vh',
-        color: 'white'
-      }} onClick={handleUserInteraction}>
-        <DebugPanel />
-
-        <div style={{
-          background: 'rgba(255, 255, 255, 0.95)',
-          color: '#333',
-          padding: '30px',
-          borderRadius: '15px',
-          maxWidth: '700px',
-          margin: '50px auto',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
-        }}>
-          <h1 style={{ marginBottom: '20px', color: '#d32f2f' }}>🚨 ACCIÓN REQUERIDA</h1>
-
-          <div style={{ marginBottom: '25px', fontSize: '16px', lineHeight: '1.6', textAlign: 'left' }}>
-            <p><strong>PROBLEMA DETECTADO:</strong></p>
-            <ul style={{ marginTop: '10px', color: '#d32f2f' }}>
-              <li>Chrome/Edge: Botón "Iniciar" da error 401</li>
-              <li>Firefox: Adjuntos no marcan tilde ✓</li>
-              <li>Cookies GeneXus bloqueadas en iframe cross-site</li>
-            </ul>
-            
-            <p style={{ marginTop: '15px' }}><strong>SOLUCIÓN:</strong></p>
-            <ul style={{ marginTop: '10px', color: '#2e7d32' }}>
-              <li>✅ Habilitar cookies cross-site para GeneXus</li>
-              <li>✅ Permitir GX_SESSION_ID y GX_CLIENT_ID</li>
-              <li>✅ Funcionalidad completa del formulario</li>
-            </ul>
-          </div>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleUserInteraction();
-              requestStorageAccess(true, 1);
-            }}
-            style={{
-              padding: '20px 40px',
-              fontSize: '18px',
-              background: '#d32f2f',
-              color: 'white',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer',
-              fontWeight: 'bold',
-              boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
-              transition: 'all 0.3s ease',
-              textTransform: 'uppercase'
-            }}
-            onMouseOver={(e) => {
-              e.currentTarget.style.background = '#b71c1c';
-              e.currentTarget.style.transform = 'scale(1.05)';
-            }}
-            onMouseOut={(e) => {
-              e.currentTarget.style.background = '#d32f2f';
-              e.currentTarget.style.transform = 'scale(1)';
-            }}
-          >
-            🍪 HABILITAR COOKIES AHORA
-          </button>
-
-          {retryCount > 0 && (
-            <p style={{ marginTop: '15px', color: '#ff9800' }}>
-              Intento {retryCount + 1}/3 - Si falla, verifica la configuración del navegador
-            </p>
-          )}
-
-          <div style={{ marginTop: '20px', fontSize: '12px', color: '#666', textAlign: 'left' }}>
-            <p><strong>Información técnica:</strong></p>
-            <p>Navegador: {browserInfo.isChrome ? 'Chrome' : browserInfo.isEdge ? 'Edge' : browserInfo.isBrave ? 'Brave' : browserInfo.isFirefox ? 'Firefox' : 'Otro'}</p>
-            <p>CHIPS: {browserInfo.appliesChips ? 'Activo (bloquea cookies)' : 'Inactivo'}</p>
-            <p>Storage Access API: {browserInfo.supportsStorageAccess ? 'Disponible' : 'No disponible'}</p>
-            <p>Test cookies: {cookieTestResult || 'Pendiente'}</p>
-          </div>
-        </div>
+      <div style={{ padding: '20px' }}>
+        <h1>Error de Configuración</h1>
+        <p>Variables de entorno no configuradas.</p>
       </div>
     );
   }
 
   return (
-    <div className="container" onClick={handleUserInteraction}>
+    <div style={{ padding: '20px', fontFamily: 'system-ui' }}>
       <DebugPanel />
+      
+      <h1>Formulario Tickets Plus - Gobierno de Mendoza</h1>
 
-      <div className="header">
-        <h1>Formulario Tickets Plus</h1>
-        <p>Gobierno de Mendoza - GeneXus + Tomcat</p>
-      </div>
+      {/* Storage Access Control */}
+      {storageStatus === 'idle' && (
+        <div style={{
+          background: '#fff3cd',
+          border: '2px solid #ffeeba',
+          padding: '20px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <h3>🍪 Permisos de Cookies Requeridos</h3>
+          <p style={{ margin: '15px 0' }}>
+            Para que el formulario GeneXus funcione correctamente (botón "Iniciar" y adjuntos),
+            <br/><strong>debes permitir el acceso a cookies cross-site</strong>.
+          </p>
+          <button
+            onClick={requestStorageAccess}
+            style={{
+              padding: '15px 30px',
+              fontSize: '16px',
+              background: '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold'
+            }}
+          >
+            PERMITIR COOKIES PARA GENEXUS
+          </button>
+        </div>
+      )}
 
-      {/* Status específico */}
-      <div style={{
-        marginBottom: '20px',
-        padding: '15px',
-        background: storageAccess === 'granted' ? 'rgba(46, 125, 50, 0.2)' : 'rgba(211, 47, 47, 0.2)',
-        borderRadius: '8px',
-        color: 'white',
-        border: `2px solid ${storageAccess === 'granted' ? '#2e7d32' : '#d32f2f'}`
-      }}>
-        {storageAccess === 'granted' ? (
-          <div>
-            <h3 style={{ color: '#4caf50', marginBottom: '10px' }}>✅ Cookies Habilitadas</h3>
-            <p>GeneXus debería funcionar correctamente:</p>
-            <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
-              <li>Botón "Iniciar" funcionará</li>
-              <li>Adjuntos marcarán tilde ✓</li>
-              <li>Global Events con sesión</li>
-            </ul>
-          </div>
-        ) : (
-          <div>
-            <h3 style={{ color: '#f44336', marginBottom: '10px' }}>❌ Cookies Bloqueadas</h3>
-            <p>Problemas esperados:</p>
-            <ul style={{ marginTop: '8px', marginLeft: '20px' }}>
-              <li>Botón "Iniciar" → Error 401</li>
-              <li>Adjuntos sin tilde ✓</li>
-              <li>Pérdida de sesión GX</li>
-            </ul>
-            <button
-              onClick={() => {
-                setShowBigButton(true);
-                setStorageAccess('pending');
-              }}
-              style={{
-                marginTop: '10px',
-                padding: '8px 16px',
-                background: '#d32f2f',
-                color: 'white',
-                border: 'none',
-                borderRadius: '5px',
-                cursor: 'pointer'
-              }}
-            >
-              Intentar habilitar cookies
-            </button>
-          </div>
-        )}
-      </div>
+      {storageStatus === 'requesting' && (
+        <div style={{
+          background: '#d1ecf1',
+          border: '2px solid #bee5eb',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <p>🔄 Solicitando permisos... Acepta en el popup del navegador</p>
+        </div>
+      )}
 
-      {/* Mostrar iframe siempre, pero con advertencia si no hay permisos */}
+      {storageStatus === 'granted' && (
+        <div style={{
+          background: '#d4edda',
+          border: '2px solid #c3e6cb',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <p>✅ Cookies habilitadas - El formulario debería funcionar correctamente</p>
+        </div>
+      )}
+
+      {storageStatus === 'denied' && (
+        <div style={{
+          background: '#f8d7da',
+          border: '2px solid #f5c6cb',
+          padding: '15px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          <p>❌ Permisos denegados - El formulario puede no funcionar correctamente</p>
+          <button
+            onClick={requestStorageAccess}
+            style={{
+              marginTop: '10px',
+              padding: '8px 16px',
+              background: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              cursor: 'pointer'
+            }}
+          >
+            Reintentar
+          </button>
+        </div>
+      )}
+
+      {/* Iframe - siempre visible */}
       <IframeLoader
         ref={iframeRef}
         src={formUrl}
-        width={process.env.NEXT_PUBLIC_IFRAME_WIDTH}
-        height={process.env.NEXT_PUBLIC_IFRAME_HEIGHT}
-        sandbox={process.env.NEXT_PUBLIC_IFRAME_SANDBOX}
+        width="100%"
+        height="800px"
+        sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation allow-storage-access-by-user-activation"
       />
 
+      {/* Debug info */}
       {debugLogger.isDebugEnabled() && (
         <div style={{
           marginTop: '20px',
           padding: '15px',
-          background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '8px',
-          color: 'white',
+          background: '#f8f9fa',
+          border: '1px solid #dee2e6',
+          borderRadius: '5px',
           fontSize: '12px'
         }}>
-          <h3>Debug Avanzado</h3>
-          <p><strong>Storage Access:</strong> {storageAccess}</p>
-          <p><strong>User Interaction:</strong> {userInteracted ? 'Sí' : 'No'}</p>
-          <p><strong>Retry Count:</strong> {retryCount}</p>
-          <p><strong>Cookie Test:</strong> {cookieTestResult}</p>
-          <p><strong>Show Big Button:</strong> {showBigButton ? 'Sí' : 'No'}</p>
-          <p><strong>Navegador:</strong> {JSON.stringify(browserInfo, null, 2).substring(0, 200)}...</p>
+          <h4>Debug Info</h4>
+          <p><strong>Storage Status:</strong> {storageStatus}</p>
+          <p><strong>Form URL:</strong> {formUrl.substring(0, 100)}...</p>
+          <p><strong>Storage Access API:</strong> {typeof document.requestStorageAccess === 'function' ? 'Disponible' : 'No disponible'}</p>
+          <p><strong>User Agent:</strong> {navigator.userAgent.substring(0, 100)}...</p>
         </div>
       )}
     </div>
