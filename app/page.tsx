@@ -106,6 +106,33 @@ export default function Home() {
     }
   }, []);
 
+  useEffect(() => {
+    let hadBlur = false;
+  
+    const handleBlur = () => {
+      hadBlur = true;
+      console.log("Window lost focus (probable popup abierto)");
+    };
+  
+    const handleFocus = () => {
+      console.log("Window regained focus");
+  
+      if (hadBlur && iframeRef.current) {
+        console.log("Recargando iframe para sincronizar estado...");
+        iframeRef.current.src = iframeRef.current.src;
+        hadBlur = false;
+      }
+    };
+  
+    window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
+  
+    return () => {
+      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
   if (!formUrl) {
     return (
       <div style={{ padding: '20px' }}>
