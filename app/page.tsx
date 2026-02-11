@@ -92,14 +92,13 @@ export default function Home() {
     console.log('Environment variables:', { baseUrl, params });
 
     if (baseUrl && params) {
-      // SIEMPRE usar el proxy API para forzar el funcionamiento del iframe
+      // Cargar directamente desde el servidor original SIN proxy
       const fullUrl = `${baseUrl}?${params}`;
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(fullUrl)}`;
       
-      setFormUrl(proxyUrl);
-      debugLogger.info('Usando proxy API forzado', { proxyUrl, originalUrl: fullUrl });
+      setFormUrl(fullUrl);
+      debugLogger.info('Cargando directamente desde servidor original', { originalUrl: fullUrl });
       
-      // Con el proxy API, establecer la sesión como lista automáticamente
+      // Establecer la sesión como lista automáticamente
       setSessionReady(true);
       setStorageStatus('granted');
     } else {
@@ -127,22 +126,22 @@ export default function Home() {
         <strong>Estado actual:</strong> {storageStatus} | <strong>Sesión lista:</strong> {sessionReady ? 'Sí' : 'No'}
       </div>
 
-      {/* Información del proxy */}
+      {/* Información de carga directa */}
       <div style={{
-        background: '#d4edda',
-        border: '2px solid #c3e6cb',
+        background: '#d1ecf1',
+        border: '2px solid #bee5eb',
         padding: '15px',
         borderRadius: '8px',
         marginBottom: '20px',
         textAlign: 'center'
       }}>
-        <p>🔄 Usando proxy API para forzar funcionamiento del iframe</p>
+        <p>🌐 Cargando directamente desde el servidor original</p>
         <p style={{ fontSize: '14px', marginTop: '5px', color: '#666' }}>
-          Todas las peticiones se procesan a través del servidor Next.js
+          Sin proxy intermedio - conexión directa al formulario
         </p>
       </div>
 
-      {/* Iframe - siempre visible con proxy API */}
+      {/* Iframe - carga directa desde servidor original */}
       <div style={{ position: 'relative', minHeight: '800px', border: '1px solid #ddd', borderRadius: '8px' }}>
         <IframeLoader
           ref={iframeRef}
@@ -195,18 +194,24 @@ export default function Home() {
             Debug Iframe
           </button>
           <button 
-            onClick={async () => {
-              const originalUrl = formUrl.replace('/api/proxy?url=', '');
-              const debugUrl = `/api/debug-html?url=${encodeURIComponent(originalUrl)}`;
-              try {
-                const response = await fetch(debugUrl);
-                const analysis = await response.json();
-                console.log('HTML Analysis:', analysis);
-                alert('Análisis del HTML completado. Revisa la consola para ver los detalles.');
-              } catch (error) {
-                console.error('Error analyzing HTML:', error);
-                alert('Error analizando el HTML. Revisa la consola.');
+            onClick={() => {
+              console.log('=== INFORMACIÓN DEL IFRAME ===');
+              console.log('URL del iframe:', formUrl);
+              console.log('Iframe element:', iframeRef.current);
+              if (iframeRef.current) {
+                console.log('Iframe src:', iframeRef.current.src);
+                console.log('Iframe contentWindow:', iframeRef.current.contentWindow);
+                try {
+                  console.log('Iframe document:', iframeRef.current.contentDocument);
+                  if (iframeRef.current.contentDocument) {
+                    console.log('Document title:', iframeRef.current.contentDocument.title);
+                    console.log('Document body:', iframeRef.current.contentDocument.body);
+                  }
+                } catch (e) {
+                  console.log('Cannot access iframe document (CORS):', e instanceof Error ? e.message : String(e));
+                }
               }
+              alert('Información del iframe enviada a la consola.');
             }}
             style={{
               marginTop: '10px',
@@ -218,7 +223,7 @@ export default function Home() {
               cursor: 'pointer'
             }}
           >
-            Analizar HTML
+            Inspeccionar Iframe
           </button>
         </div>
       )}
